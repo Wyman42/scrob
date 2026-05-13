@@ -237,16 +237,18 @@ async def get_recently_added(url: str, token: str, section_id: str, media_type: 
         return []
 
 
-async def mark_watched(url: str, token: str, rating_key: str) -> bool:
+PUSH_TIMEOUT = httpx.Timeout(15.0)
+
+async def mark_watched(url: str, token: str, rating_key: str, client: httpx.AsyncClient | None = None) -> bool:
     """Scrobble a media item as watched on Plex."""
+    headers = {"X-Plex-Token": token, "Accept": "application/json"}
+    params = {"key": rating_key, "identifier": "com.plexapp.plugins.library"}
     try:
-        async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=False) as client:
-            headers = {"X-Plex-Token": token, "Accept": "application/json"}
-            r = await client.get(
-                f"{url.rstrip('/')}/:/scrobble",
-                headers=headers,
-                params={"key": rating_key, "identifier": "com.plexapp.plugins.library"},
-            )
+        if client:
+            r = await client.get(f"{url.rstrip('/')}/:/scrobble", headers=headers, params=params)
+            return r.status_code < 400
+        async with httpx.AsyncClient(timeout=PUSH_TIMEOUT, follow_redirects=False) as c:
+            r = await c.get(f"{url.rstrip('/')}/:/scrobble", headers=headers, params=params)
             return r.status_code < 400
     except Exception:
         return False
@@ -285,16 +287,15 @@ async def scan_libraries(url: str, token: str, section_keys: list[str]) -> bool:
         return False
 
 
-async def set_rating(url: str, token: str, rating_key: str, rating: float) -> bool:
+async def set_rating(url: str, token: str, rating_key: str, rating: float, client: httpx.AsyncClient | None = None) -> bool:
     """Set a star rating on a Plex item (0–10 scale)."""
+    headers = {"X-Plex-Token": token, "Accept": "application/json"}
     try:
-        async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=False) as client:
-            headers = {"X-Plex-Token": token, "Accept": "application/json"}
-            r = await client.put(
-                f"{url.rstrip('/')}/library/metadata/{rating_key}/userRating",
-                headers=headers,
-                params={"rating": rating},
-            )
+        if client:
+            r = await client.put(f"{url.rstrip('/')}/library/metadata/{rating_key}/userRating", headers=headers, params={"rating": rating})
+            return r.status_code < 400
+        async with httpx.AsyncClient(timeout=PUSH_TIMEOUT, follow_redirects=False) as c:
+            r = await c.put(f"{url.rstrip('/')}/library/metadata/{rating_key}/userRating", headers=headers, params={"rating": rating})
             return r.status_code < 400
     except Exception:
         return False

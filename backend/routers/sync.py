@@ -325,26 +325,33 @@ async def _fan_out_changes_to_other_connections(
         for source_id, source_type, media_id in files_result.all():
             source_ids_map.setdefault((source_type, media_id), []).append(source_id)
 
+        import httpx as _httpx
+        sem = asyncio.Semaphore(20)
+
+        async def _guarded(coro):
+            async with sem:
+                return await coro
+
         for conn in push_candidates:
             conn_source = CollectionSource(conn.type)
             if conn.push_watched:
                 for mid in new_watched_ids:
                     for sid in source_ids_map.get((conn_source, mid), []):
                         if conn.type == "plex":
-                            push_tasks.append(plex.mark_watched(conn.url, conn.token, sid))
+                            push_tasks.append(_guarded(plex.mark_watched(conn.url, conn.token, sid)))
                         elif conn.type == "jellyfin":
-                            push_tasks.append(jellyfin.mark_watched(conn.url, conn.token, conn.server_user_id, sid))
+                            push_tasks.append(_guarded(jellyfin.mark_watched(conn.url, conn.token, conn.server_user_id, sid)))
                         elif conn.type == "emby":
-                            push_tasks.append(emby.mark_watched(conn.url, conn.token, conn.server_user_id, sid))
+                            push_tasks.append(_guarded(emby.mark_watched(conn.url, conn.token, conn.server_user_id, sid)))
             if conn.push_ratings:
                 for mid, rating in new_ratings.items():
                     for sid in source_ids_map.get((conn_source, mid), []):
                         if conn.type == "plex":
-                            push_tasks.append(plex.set_rating(conn.url, conn.token, sid, rating))
+                            push_tasks.append(_guarded(plex.set_rating(conn.url, conn.token, sid, rating)))
                         elif conn.type == "jellyfin":
-                            push_tasks.append(jellyfin.set_rating(conn.url, conn.token, conn.server_user_id, sid, rating))
+                            push_tasks.append(_guarded(jellyfin.set_rating(conn.url, conn.token, conn.server_user_id, sid, rating)))
                         elif conn.type == "emby":
-                            push_tasks.append(emby.set_rating(conn.url, conn.token, conn.server_user_id, sid, rating))
+                            push_tasks.append(_guarded(emby.set_rating(conn.url, conn.token, conn.server_user_id, sid, rating)))
 
     # ── Trakt fan-out ────────────────────────────────────────────────────────
     push_trakt_watched = settings and settings.trakt_push_watched and settings.trakt_access_token and settings.trakt_client_id
@@ -364,27 +371,43 @@ async def _fan_out_changes_to_other_connections(
             shows_res = await db.execute(select(Show).where(Show.id.in_(show_ids)))
             shows_by_id = {s.id: s for s in shows_res.scalars().all()}
 
+        trakt_history_movies: list[int] = []
+        trakt_history_episodes: list[tuple[int, int, int]] = []
         if push_trakt_watched:
             for mid in new_watched_ids:
                 media = media_by_id.get(mid)
                 if not media or not media.tmdb_id:
                     continue
                 if media.media_type == MediaType.movie:
-                    push_tasks.append(trakt_client.add_movie_to_history(settings.trakt_client_id, settings.trakt_access_token, media.tmdb_id))
+                    trakt_history_movies.append(media.tmdb_id)
                 elif media.media_type == MediaType.episode and media.show_id and media.season_number is not None and media.episode_number is not None:
                     show = shows_by_id.get(media.show_id)
                     if show and show.tmdb_id:
-                        push_tasks.append(trakt_client.add_episode_to_history(settings.trakt_client_id, settings.trakt_access_token, show.tmdb_id, media.season_number, media.episode_number))
+                        trakt_history_episodes.append((show.tmdb_id, media.season_number, media.episode_number))
 
+        if trakt_history_movies or trakt_history_episodes:
+            push_tasks.append(trakt_client.add_to_history_batch(
+                settings.trakt_client_id, settings.trakt_access_token,
+                trakt_history_movies, trakt_history_episodes,
+            ))
+
+        trakt_movie_ratings: list[tuple[int, float]] = []
+        trakt_show_ratings: list[tuple[int, float]] = []
         if push_trakt_ratings:
             for mid, rating in new_ratings.items():
                 media = media_by_id.get(mid)
                 if not media or not media.tmdb_id:
                     continue
                 if media.media_type == MediaType.movie:
-                    push_tasks.append(trakt_client.set_movie_rating(settings.trakt_client_id, settings.trakt_access_token, media.tmdb_id, rating))
+                    trakt_movie_ratings.append((media.tmdb_id, rating))
                 elif media.media_type in (MediaType.series, MediaType.episode):
-                    push_tasks.append(trakt_client.set_show_rating(settings.trakt_client_id, settings.trakt_access_token, media.tmdb_id, rating))
+                    trakt_show_ratings.append((media.tmdb_id, rating))
+
+        if trakt_movie_ratings or trakt_show_ratings:
+            push_tasks.append(trakt_client.set_ratings_batch(
+                settings.trakt_client_id, settings.trakt_access_token,
+                trakt_movie_ratings, trakt_show_ratings,
+            ))
 
     if push_tasks:
         target_count = len(push_candidates) + (1 if (push_trakt_watched or push_trakt_ratings) else 0)
@@ -1623,7 +1646,7 @@ async def sync_connection(
     if not source:
         raise HTTPException(status_code=400, detail=f"Unknown connection type: {conn.type}")
 
-    job = SyncJob(user_id=current_user.id, source=source, status=SyncStatus.pending)
+    job = SyncJob(user_id=current_user.id, source=source, status=SyncStatus.pending, connection_id=connection_id, job_type="pull")
     db.add(job)
     await db.commit()
     await db.refresh(job)
@@ -1633,87 +1656,236 @@ async def sync_connection(
     return {"status": "started", "job_id": job.id, "message": f"{conn.type.capitalize()} sync is running in the background"}
 
 
-async def _run_full_push(user_id: int, connection_id: int) -> None:
+async def _run_full_push(user_id: int, connection_id: int, job_id: int) -> None:
+    import httpx as _httpx
+
     async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     async with async_session() as db:
-        conn_result = await db.execute(
-            select(MediaServerConnection).where(
-                MediaServerConnection.id == connection_id,
-                MediaServerConnection.user_id == user_id,
-            )
-        )
-        conn = conn_result.scalar_one_or_none()
-        if not conn:
-            return
+        await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(status=SyncStatus.running))
+        await db.commit()
 
-        conn_source = CollectionSource(conn.type)
-        watched_ids: set[int] = set()
-        ratings_map: dict[int, float] = {}
-
-        if conn.push_watched:
-            watched_result = await db.execute(
-                select(WatchEvent.media_id).where(WatchEvent.user_id == user_id).distinct()
-            )
-            watched_ids = {row[0] for row in watched_result.all()}
-
-        if conn.push_ratings:
-            ratings_result = await db.execute(
-                select(Rating.media_id, Rating.rating).where(
-                    Rating.user_id == user_id,
-                    Rating.rating.isnot(None),
+        try:
+            conn_result = await db.execute(
+                select(MediaServerConnection).where(
+                    MediaServerConnection.id == connection_id,
+                    MediaServerConnection.user_id == user_id,
                 )
             )
-            ratings_map = {row[0]: row[1] for row in ratings_result.all()}
+            conn = conn_result.scalar_one_or_none()
+            if not conn:
+                await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(status=SyncStatus.failed, error_message="Connection not found"))
+                await db.commit()
+                return
 
-        all_media_ids = watched_ids | set(ratings_map.keys())
-        if not all_media_ids:
-            print(f"Full push for connection {connection_id}: nothing to push")
-            return
+            conn_source = CollectionSource(conn.type)
+            watched_ids: set[int] = set()
+            ratings_map: dict[int, float] = {}
 
-        files_result = await db.execute(
-            select(CollectionFile.source_id, Collection.media_id)
-            .join(Collection, Collection.id == CollectionFile.collection_id)
-            .where(
-                Collection.user_id == user_id,
-                Collection.media_id.in_(all_media_ids),
-                CollectionFile.source == conn_source,
-                CollectionFile.source_id.isnot(None),
+            if conn.push_watched:
+                watched_result = await db.execute(
+                    select(WatchEvent.media_id).where(WatchEvent.user_id == user_id).distinct()
+                )
+                watched_ids = {row[0] for row in watched_result.all()}
+
+            if conn.push_ratings:
+                ratings_result = await db.execute(
+                    select(Rating.media_id, Rating.rating).where(
+                        Rating.user_id == user_id,
+                        Rating.rating.isnot(None),
+                    )
+                )
+                ratings_map = {row[0]: row[1] for row in ratings_result.all()}
+
+            all_media_ids = watched_ids | set(ratings_map.keys())
+            if not all_media_ids:
+                await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(status=SyncStatus.completed, total_items=0, processed_items=0))
+                await db.commit()
+                print(f"Full push for connection {connection_id}: nothing to push")
+                return
+
+            # Fast path: items we've already synced from this server have a known source_id
+            files_result = await db.execute(
+                select(CollectionFile.source_id, Collection.media_id)
+                .join(Collection, Collection.id == CollectionFile.collection_id)
+                .where(
+                    Collection.user_id == user_id,
+                    Collection.media_id.in_(all_media_ids),
+                    CollectionFile.source == conn_source,
+                    CollectionFile.source_id.isnot(None),
+                )
             )
-        )
-        source_ids_map: dict[int, list[str]] = {}
-        for source_id, media_id in files_result.all():
-            source_ids_map.setdefault(media_id, []).append(source_id)
+            source_ids_map: dict[int, list[str]] = {}
+            for source_id, media_id in files_result.all():
+                source_ids_map.setdefault(media_id, []).append(source_id)
 
-        push_tasks = []
+            # Slow path: items not in source_ids_map need a live TMDB-based lookup on the server
+            missing_ids = all_media_ids - set(source_ids_map.keys())
+            media_info: dict[int, Media] = {}
+            show_tmdb_map: dict[int, int] = {}  # show.id → show.tmdb_id
 
-        if conn.push_watched:
-            for mid in watched_ids:
-                for sid in source_ids_map.get(mid, []):
+            if missing_ids:
+                media_rows = await db.execute(select(Media).where(Media.id.in_(missing_ids)))
+                for m in media_rows.scalars().all():
+                    media_info[m.id] = m
+
+                show_ids_needed = {m.show_id for m in media_info.values() if m.show_id is not None}
+                if show_ids_needed:
+                    show_rows = await db.execute(select(Show.id, Show.tmdb_id).where(Show.id.in_(show_ids_needed)))
+                    show_tmdb_map = {row[0]: row[1] for row in show_rows.all()}
+
+            # Build push list: (action, source_id, [rating])
+            push_items: list[tuple] = []
+
+            if conn.push_watched:
+                for mid in watched_ids:
+                    for sid in source_ids_map.get(mid, []):
+                        push_items.append(("watched", sid))
+
+            if conn.push_ratings:
+                for mid, rating in ratings_map.items():
+                    for sid in source_ids_map.get(mid, []):
+                        push_items.append(("rating", sid, rating))
+
+            # Items that need live lookup: defer as coroutines resolved during push
+            lookup_items: list[tuple] = []  # (action, media_id, [rating])
+
+            if missing_ids:
+                if conn.push_watched:
+                    for mid in watched_ids & missing_ids:
+                        if mid in media_info:
+                            lookup_items.append(("watched", mid))
+                if conn.push_ratings:
+                    for mid in set(ratings_map.keys()) & missing_ids:
+                        if mid in media_info:
+                            lookup_items.append(("rating", mid, ratings_map[mid]))
+
+            total = len(push_items) + len(lookup_items)
+            if total == 0:
+                await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(status=SyncStatus.completed, total_items=0, processed_items=0))
+                await db.commit()
+                print(f"Full push for connection {connection_id}: no items found for this server")
+                return
+
+            await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(total_items=total, processed_items=0))
+            await db.commit()
+            print(f"Full push for connection {connection_id}: pushing {total} items ({len(push_items)} known, {len(lookup_items)} via live lookup)...")
+
+            sem = asyncio.Semaphore(10)
+            _PROGRESS_INTERVAL = 20
+
+            def _extract_source_id(item_dict: dict | None) -> str | None:
+                if not item_dict:
+                    return None
+                if conn.type == "plex":
+                    rk = item_dict.get("ratingKey")
+                    return str(rk) if rk else None
+                return item_dict.get("Id")
+
+            async def _find_source_id(mid: int) -> str | None:
+                m = media_info.get(mid)
+                if not m or not m.tmdb_id:
+                    return None
+                if m.media_type == MediaType.movie:
                     if conn.type == "plex":
-                        push_tasks.append(plex.mark_watched(conn.url, conn.token, sid))
+                        found = await plex.find_movie_by_tmdb_id(conn.url, conn.token, m.tmdb_id)
                     elif conn.type == "jellyfin":
-                        push_tasks.append(jellyfin.mark_watched(conn.url, conn.token, conn.server_user_id, sid))
-                    elif conn.type == "emby":
-                        push_tasks.append(emby.mark_watched(conn.url, conn.token, conn.server_user_id, sid))
-
-        if conn.push_ratings:
-            for mid, rating in ratings_map.items():
-                for sid in source_ids_map.get(mid, []):
+                        found = await jellyfin.find_movie_by_tmdb_id(conn.url, conn.token, m.tmdb_id)
+                    else:
+                        found = await emby.find_movie_by_tmdb_id(conn.url, conn.token, m.tmdb_id)
+                elif m.media_type == MediaType.episode:
+                    show_tmdb = show_tmdb_map.get(m.show_id) if m.show_id else None
+                    if not show_tmdb or m.season_number is None or m.episode_number is None:
+                        return None
                     if conn.type == "plex":
-                        push_tasks.append(plex.set_rating(conn.url, conn.token, sid, rating))
+                        found = await plex.find_episode_by_ids(conn.url, conn.token, show_tmdb, m.season_number, m.episode_number)
                     elif conn.type == "jellyfin":
-                        push_tasks.append(jellyfin.set_rating(conn.url, conn.token, conn.server_user_id, sid, rating))
-                    elif conn.type == "emby":
-                        push_tasks.append(emby.set_rating(conn.url, conn.token, conn.server_user_id, sid, rating))
+                        found = await jellyfin.find_episode_by_ids(conn.url, conn.token, show_tmdb, m.season_number, m.episode_number)
+                    else:
+                        found = await emby.find_episode_by_ids(conn.url, conn.token, show_tmdb, m.season_number, m.episode_number)
+                else:
+                    return None
+                return _extract_source_id(found)
 
-        if not push_tasks:
-            print(f"Full push for connection {connection_id}: no items found in collection for this server")
-            return
+            async def _push_known(client: _httpx.AsyncClient, item: tuple) -> bool:
+                async with sem:
+                    try:
+                        if item[0] == "watched":
+                            sid = item[1]
+                            if conn.type == "plex":
+                                return await plex.mark_watched(conn.url, conn.token, sid, client=client)
+                            elif conn.type == "jellyfin":
+                                return await jellyfin.mark_watched(conn.url, conn.token, conn.server_user_id, sid, client=client)
+                            else:
+                                return await emby.mark_watched(conn.url, conn.token, conn.server_user_id, sid, client=client)
+                        else:
+                            sid, rating = item[1], item[2]
+                            if conn.type == "plex":
+                                return await plex.set_rating(conn.url, conn.token, sid, rating, client=client)
+                            elif conn.type == "jellyfin":
+                                return await jellyfin.set_rating(conn.url, conn.token, conn.server_user_id, sid, rating, client=client)
+                            else:
+                                return await emby.set_rating(conn.url, conn.token, conn.server_user_id, sid, rating, client=client)
+                    except Exception:
+                        return False
 
-        print(f"Full push for connection {connection_id}: pushing {len(push_tasks)} items...")
-        results = await asyncio.gather(*push_tasks, return_exceptions=True)
-        failed = sum(1 for r in results if isinstance(r, Exception))
-        print(f"Full push for connection {connection_id}: {len(push_tasks) - failed}/{len(push_tasks)} succeeded")
+            async def _push_lookup(client: _httpx.AsyncClient, item: tuple) -> bool:
+                async with sem:
+                    try:
+                        mid = item[1]
+                        sid = await _find_source_id(mid)
+                        if not sid:
+                            return False
+                        if item[0] == "watched":
+                            if conn.type == "plex":
+                                return await plex.mark_watched(conn.url, conn.token, sid, client=client)
+                            elif conn.type == "jellyfin":
+                                return await jellyfin.mark_watched(conn.url, conn.token, conn.server_user_id, sid, client=client)
+                            else:
+                                return await emby.mark_watched(conn.url, conn.token, conn.server_user_id, sid, client=client)
+                        else:
+                            rating = item[2]
+                            if conn.type == "plex":
+                                return await plex.set_rating(conn.url, conn.token, sid, rating, client=client)
+                            elif conn.type == "jellyfin":
+                                return await jellyfin.set_rating(conn.url, conn.token, conn.server_user_id, sid, rating, client=client)
+                            else:
+                                return await emby.set_rating(conn.url, conn.token, conn.server_user_id, sid, rating, client=client)
+                    except Exception:
+                        return False
+
+            done = 0
+            succeeded = 0
+            failed_count = 0
+
+            async with _httpx.AsyncClient(timeout=_httpx.Timeout(15.0), follow_redirects=False) as client:
+                coros = (
+                    [_push_known(client, item) for item in push_items]
+                    + [_push_lookup(client, item) for item in lookup_items]
+                )
+                for future in asyncio.as_completed(coros):
+                    result = await future
+                    done += 1
+                    if result is True:
+                        succeeded += 1
+                    else:
+                        failed_count += 1
+                    if done % _PROGRESS_INTERVAL == 0:
+                        await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(processed_items=done))
+                        await db.commit()
+
+            await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(
+                status=SyncStatus.completed,
+                processed_items=total,
+                stats={"succeeded": succeeded, "failed": failed_count},
+            ))
+            await db.commit()
+            print(f"Full push for connection {connection_id}: {succeeded}/{total} succeeded, {failed_count} failed")
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(status=SyncStatus.failed, error_message=str(e)[:900]))
+            await db.commit()
 
 
 @router.post("/connection/{connection_id}/push")
@@ -1726,8 +1898,16 @@ async def push_upstream(
     conn = await _get_connection_or_404(db, connection_id, current_user.id)
     if not conn.push_watched and not conn.push_ratings:
         raise HTTPException(status_code=400, detail="Enable 'Scrob → Server' push flags for this connection first")
-    background_tasks.add_task(_run_full_push, current_user.id, connection_id)
-    return {"status": "started", "message": "Full upstream sync is running in the background"}
+
+    source_map = {"jellyfin": CollectionSource.jellyfin, "emby": CollectionSource.emby, "plex": CollectionSource.plex}
+    source = source_map.get(conn.type, CollectionSource.jellyfin)
+    job = SyncJob(user_id=current_user.id, source=source, status=SyncStatus.pending, connection_id=connection_id, job_type="push")
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    background_tasks.add_task(_run_full_push, current_user.id, connection_id, job.id)
+    return {"status": "started", "job_id": job.id, "message": "Full upstream push is running in the background"}
 
 
 @router.post("/jellyfin")

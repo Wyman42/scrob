@@ -29,5 +29,8 @@ class SyncJob(Base):
     stats           : Mapped[Optional[dict]] = mapped_column(JSON)
     warnings        : Mapped[Optional[list]] = mapped_column(JSON)
 
+    connection_id   : Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("media_server_connections.id", ondelete="SET NULL"), nullable=True)
+    job_type        : Mapped[str]           = mapped_column(String(20), nullable=False, server_default="pull")
+
     created_at      : Mapped[datetime]      = mapped_column(DateTime, server_default=func.now(), nullable=False)
     updated_at      : Mapped[datetime]      = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
