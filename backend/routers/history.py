@@ -247,6 +247,10 @@ async def get_now_playing(
                 item["media"]["show_tmdb_id"] = show.tmdb_id
                 item["media"]["show_poster_path"] = show.poster_path
                 item["media"]["show_backdrop_path"] = show.backdrop_path
+        elif media.media_type == MediaType.episode:
+            hint = (media.tmdb_data or {}).get("show_title")
+            if hint:
+                item["media"]["show_title"] = hint
         sessions.append(item)
     return {"now_playing": sessions}
 

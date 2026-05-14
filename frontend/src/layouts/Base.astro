@@ -422,7 +422,9 @@ const bottomNavItem = (active: boolean) =>
         const subtitle = isEpisode
           ? `S${String(m.season_number).padStart(2,'0')}E${String(m.episode_number).padStart(2,'0')} · ${m.title}`
           : null;
-        const href = isEpisode && m.show_tmdb_id ? `/show/${m.show_tmdb_id}` : `/media/movie/${m.tmdb_id}`;
+        const href = isEpisode
+          ? (m.show_tmdb_id ? `/show/${m.show_tmdb_id}` : null)
+          : (m.tmdb_id ? `/media/movie/${m.tmdb_id}` : null);
         const isPaused = session.state === 'paused';
         const sourceLabels = { plex: 'Plex', emby: 'Emby', kodi: 'Kodi', jellyfin: 'Jellyfin' };
         const sourceLabel = sourceLabels[session.source] ?? session.source;
@@ -454,7 +456,7 @@ const bottomNavItem = (active: boolean) =>
             <div class="absolute inset-0 overflow-hidden" ${backdropBg}>
               ${backdropUrl ? `<div class="absolute inset-0 bg-zinc-950/85 backdrop-blur-sm"></div>` : `<div class="absolute inset-0 bg-zinc-900"></div>`}
             </div>
-            <a href="${esc(href)}" class="relative flex items-center gap-3 px-6 md:px-8 py-2.5 max-w-screen-xl mx-auto hover:brightness-110 transition-all">
+            ${href ? `<a href="${esc(href)}" class="relative flex items-center gap-3 px-6 md:px-8 py-2.5 max-w-screen-xl mx-auto hover:brightness-110 transition-all">` : `<div class="relative flex items-center gap-3 px-6 md:px-8 py-2.5 max-w-screen-xl mx-auto">`}
               ${indicator}
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 mb-0.5">
@@ -466,7 +468,7 @@ const bottomNavItem = (active: boolean) =>
                 ${subtitle ? `<p class="text-[10px] text-zinc-400 truncate leading-tight mt-0.5">${esc(subtitle)}</p>` : ''}
               </div>
               <span data-nppct="${sessionKey}" class="text-xs font-bold text-zinc-300 tabular-nums shrink-0">${esc(String(pct))}%</span>
-            </a>
+            ${href ? '</a>' : '</div>'}
             <div class="absolute bottom-0 left-0 right-0 bg-zinc-950/30" style="height:2px">
               <div data-npbar="${sessionKey}"
                 data-ps="${progressSeconds}"
