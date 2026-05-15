@@ -3919,7 +3919,7 @@ async def pick_for_me(
                     Collection.user_id == current_user.id,
                     CollectionFile.connection_id.isnot(None),
                 )
-                .distinct()
+                .group_by(MediaServerConnection.id)
             )
         else:
             cf_conn_q = await db.execute(
@@ -3933,7 +3933,7 @@ async def pick_for_me(
                     Collection.user_id == current_user.id,
                     CollectionFile.connection_id.isnot(None),
                 )
-                .distinct()
+                .group_by(MediaServerConnection.id)
             )
         seen_conn_ids: set[int] = set()
         for c in cf_conn_q.scalars().all():

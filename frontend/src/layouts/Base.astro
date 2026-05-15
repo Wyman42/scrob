@@ -410,7 +410,7 @@ const bottomNavItem = (active: boolean) =>
       if (isNaN(updatedMs)) return 0;
       const elapsed = playing ? (Date.now() - updatedMs) / 1000 : 0;
       const current = Math.max(0, Math.min(progressSeconds + elapsed, runtimeSeconds));
-      return Math.min(100, Math.floor((current / runtimeSeconds) * 100));
+      return Math.min(100, (current / runtimeSeconds) * 100);
     }
 
     function renderNowPlaying(sessions) {
@@ -423,16 +423,19 @@ const bottomNavItem = (active: boolean) =>
           ? `S${String(m.season_number).padStart(2,'0')}E${String(m.episode_number).padStart(2,'0')} · ${m.title}`
           : null;
         const href = isEpisode
-          ? (m.show_tmdb_id ? `/show/${m.show_tmdb_id}` : null)
+          ? (m.show_tmdb_id && m.season_number && m.episode_number
+              ? `/show/${m.show_tmdb_id}/season/${m.season_number}/${m.episode_number}`
+              : m.show_tmdb_id ? `/show/${m.show_tmdb_id}` : null)
           : (m.tmdb_id ? `/media/movie/${m.tmdb_id}` : null);
         const isPaused = session.state === 'paused';
-        const sourceLabels = { plex: 'Plex', emby: 'Emby', kodi: 'Kodi', jellyfin: 'Jellyfin' };
+        const sourceLabels = { plex: 'Plex', emby: 'Emby', kodi: 'Kodi', jellyfin: 'Jellyfin', manual: 'Scrob' };
         const sourceLabel = sourceLabels[session.source] ?? session.source;
         const progressSeconds = session.progress_seconds ?? 0;
         const runtime = m.runtime ?? 0;
         const pct = runtime > 0
           ? calcLivePct(progressSeconds, session.updated_at, runtime, !isPaused)
           : Math.round((session.progress_percent ?? 0) * 100);
+        const pctDisplay = Math.floor(pct);
         const sessionKey = esc(session.session_key);
 
         const rawBackdrop = m.backdrop_path || m.show_backdrop_path;
@@ -467,7 +470,7 @@ const bottomNavItem = (active: boolean) =>
                 <p class="text-xs font-semibold text-zinc-100 truncate leading-tight">${esc(title)}</p>
                 ${subtitle ? `<p class="text-[10px] text-zinc-400 truncate leading-tight mt-0.5">${esc(subtitle)}</p>` : ''}
               </div>
-              <span data-nppct="${sessionKey}" class="text-xs font-bold text-zinc-300 tabular-nums shrink-0">${esc(String(pct))}%</span>
+              <span data-nppct="${sessionKey}" class="text-xs font-bold text-zinc-300 tabular-nums shrink-0">${esc(String(pctDisplay))}%</span>
             ${href ? '</a>' : '</div>'}
             <div class="absolute bottom-0 left-0 right-0 bg-zinc-950/30" style="height:2px">
               <div data-npbar="${sessionKey}"
@@ -490,7 +493,7 @@ const bottomNavItem = (active: boolean) =>
         const pct = calcLivePct(parseFloat(bar.dataset.ps), bar.dataset.ua, rt, true);
         bar.style.width = pct + '%';
         const pctEl = document.querySelector(`[data-nppct="${bar.dataset.npbar}"]`);
-        if (pctEl) pctEl.textContent = pct + '%';
+        if (pctEl) pctEl.textContent = Math.floor(pct) + '%';
       });
     }
 

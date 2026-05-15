@@ -193,6 +193,22 @@ class WatchEventCreate(BaseModel):
     watched_at: Optional[datetime] = None
     completed: bool = True
 
+
+class ManualSessionStart(BaseModel):
+    tmdb_id: int
+    media_type: MediaType
+    title: Optional[str] = None
+    runtime: Optional[int] = None       # minutes, used if Media.runtime is null
+    show_tmdb_id: Optional[int] = None  # episode context
+    season_number: Optional[int] = None
+    episode_number: Optional[int] = None
+
+
+class ManualSessionUpdate(BaseModel):
+    progress_seconds: int
+    state: Optional[str] = None  # "playing" | "paused"
+
+
 class UserProfileUpdate(BaseModel):
     display_name: Optional[str] = None
     bio: Optional[str] = None
