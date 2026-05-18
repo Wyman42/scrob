@@ -380,6 +380,7 @@ export interface UserSettings {
 
   preferences: UserPreferences | null;
   blur_explicit: boolean;
+  time_format_24h: boolean;
 }
 
 export interface MediaServerConnection {
