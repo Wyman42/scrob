@@ -22,6 +22,7 @@ class CollectionSource(str, enum.Enum):
     trakt    = "trakt"
     simkl    = "simkl"
     manual   = "manual"
+    tmdb     = "tmdb"
 
 class PrivacyLevel(str, enum.Enum):
     public       = "public"

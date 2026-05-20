@@ -8,13 +8,15 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Up
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.future import select
-from sqlalchemy import delete, func
+from sqlalchemy import delete, func, update
 
 from db import get_db, engine
 from models.users import User
 from models.global_settings import GlobalSettings
 from models.media import Media
 from models.collection import Collection
+from models.sync import SyncJob, SyncStatus
+from models.base import CollectionSource, MediaType
 from dependencies import require_admin
 from core.url_validator import validate_service_url
 from core.backup import asyncpg_conn, restore_backup
@@ -169,23 +171,34 @@ async def backup_database(_: User = Depends(require_admin)):
 async def admin_heal_metadata(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
 ):
     """Re-enrich all collection items server-wide that are missing poster/date metadata."""
     gs = await _get_or_create_global_settings(db)
     if not gs.tmdb_api_key:
         raise HTTPException(status_code=400, detail="A global TMDB API key is required for server-wide heal")
-    background_tasks.add_task(run_admin_heal, gs.tmdb_api_key)
+    job = SyncJob(user_id=current_user.id, source=CollectionSource.tmdb, job_type="heal", status=SyncStatus.pending)
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+    background_tasks.add_task(run_admin_heal, gs.tmdb_api_key, current_user.id, job.id)
     return {"status": "started", "message": "Server-wide metadata heal is running in the background"}
 
 
-async def run_admin_heal(api_key: str):
+async def run_admin_heal(api_key: str, user_id: int | None = None, job_id: int | None = None):
     from models.show import Show
-    from models.base import MediaType
     from routers.sync import batch_enrich_items
     async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     async with async_session() as db:
+        async def _update_job(**kwargs):
+            if job_id is None:
+                return
+            await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(updated_at=func.now(), **kwargs))
+            await db.commit()
+
         try:
+            await _update_job(status=SyncStatus.running)
+
             coll_q = await db.execute(
                 select(Media)
                 .where(
@@ -200,6 +213,7 @@ async def run_admin_heal(api_key: str):
 
             if not movies and not episodes:
                 print("Admin heal: nothing to fix server-wide")
+                await _update_job(status=SyncStatus.completed, total_items=0, stats={"healed": True})
                 return
 
             print(f"Admin heal: {len(movies)} movies, {len(episodes)} episodes to re-enrich")
@@ -216,13 +230,16 @@ async def run_admin_heal(api_key: str):
                 (m, show_tmdb_map[m.show_id]) for m in episodes if m.show_id in show_tmdb_map
             ]
 
+            await _update_job(total_items=len(to_enrich), processed_items=0)
             await batch_enrich_items(to_enrich, api_key=api_key)
             await db.commit()
+            await _update_job(processed_items=len(to_enrich), status=SyncStatus.completed, stats={"healed": True})
             print(f"Admin heal complete: processed {len(to_enrich)} items")
         except Exception as e:
             print(f"Admin heal failed: {e}")
             import traceback
             traceback.print_exc()
+            await _update_job(status=SyncStatus.failed, error_message=str(e)[:900])
 
 
 @router.post("/restore")

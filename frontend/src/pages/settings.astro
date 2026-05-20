@@ -960,20 +960,34 @@ if (me.totp_enabled) {
       <section>
         <h2 class="text-xl font-semibold text-zinc-100 mb-4 border-b border-zinc-800 pb-2">Maintenance</h2>
         <div class="space-y-3 max-w-xl">
-          <div class="flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4">
-            <div>
-              <p class="text-sm font-medium text-zinc-200">Heal missing metadata</p>
-              <p class="text-xs text-zinc-500 mt-0.5">Re-fetches posters and dates for collection items that are missing them due to TMDB errors during sync.</p>
+          <div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+            <div class="flex items-center justify-between px-5 py-4">
+              <div>
+                <p class="text-sm font-medium text-zinc-200">Heal missing metadata</p>
+                <p class="text-xs text-zinc-500 mt-0.5">Re-fetches posters and dates for collection items that are missing them due to TMDB errors during sync.</p>
+              </div>
+              <button
+                id="heal-btn"
+                type="button"
+                disabled={!hasTmdbKey}
+                title={!hasTmdbKey ? "TMDB API Key is required" : ""}
+                class="ml-4 shrink-0 text-sm px-4 py-2 rounded-lg transition-colors cursor-pointer disabled:opacity-50 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30"
+              >
+                Heal
+              </button>
             </div>
-            <button
-              id="heal-btn"
-              type="button"
-              disabled={!hasTmdbKey}
-              title={!hasTmdbKey ? "TMDB API Key is required" : ""}
-              class="ml-4 shrink-0 text-sm px-4 py-2 rounded-lg transition-colors cursor-pointer disabled:opacity-50 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30"
-            >
-              Heal
-            </button>
+            <div id="heal-progress" class="hidden border-t border-zinc-800 px-5 py-3">
+              <div class="flex justify-between items-center mb-1.5">
+                <span id="heal-job-label" class="text-xs font-semibold uppercase tracking-wider text-zinc-500">Working…</span>
+                <span id="heal-job-pct" class="text-xs font-bold text-zinc-400"></span>
+              </div>
+              <div class="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden">
+                <div id="heal-job-bar" class="h-1.5 rounded-full transition-all duration-500 bg-blue-600 animate-pulse" style="width: 100%"></div>
+              </div>
+              <div class="flex justify-between text-xs text-zinc-500 mt-1">
+                <span id="heal-job-items"></span>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -1678,6 +1692,78 @@ if (me.totp_enabled) {
     pollTraktJob();
   }
 
+  // ── Heal progress tracking ────────────────────────────────────────────────
+  let healPoller: ReturnType<typeof setTimeout> | null = null;
+
+  function renderHealProgress(job: any) {
+    const strip = document.getElementById('heal-progress');
+    const bar   = document.getElementById('heal-job-bar');
+    const pctEl = document.getElementById('heal-job-pct');
+    const label = document.getElementById('heal-job-label');
+    const items = document.getElementById('heal-job-items');
+    if (!strip) return;
+
+    if (!job) { strip.classList.add('hidden'); return; }
+    strip.classList.remove('hidden');
+
+    const isFailed    = job.status === 'failed';
+    const isCompleted = job.status === 'completed';
+    const isPending   = job.status === 'pending';
+
+    if (isFailed) {
+      if (bar) { bar.className = 'h-1.5 rounded-full transition-all duration-500 bg-red-500'; bar.style.width = '100%'; }
+      if (label) label.textContent = 'Heal failed';
+      if (pctEl) pctEl.textContent = '';
+      if (items) items.textContent = esc(job.error_message || 'Unknown error');
+      return;
+    }
+
+    if (isCompleted) {
+      if (bar) { bar.className = 'h-1.5 rounded-full transition-all duration-500 bg-blue-600'; bar.style.width = '100%'; }
+      if (label) label.textContent = 'Heal complete';
+      if (pctEl) pctEl.textContent = '100%';
+      if (items) items.textContent = `${job.processed_items} item${job.processed_items !== 1 ? 's' : ''} healed`;
+      return;
+    }
+
+    const pct = job.total_items > 0 ? Math.min(100, Math.round((job.processed_items / job.total_items) * 100)) : 0;
+    const indeterminate = isPending || pct === 0;
+    if (bar) {
+      bar.className = `h-1.5 rounded-full transition-all duration-500 bg-blue-600${indeterminate ? ' animate-pulse' : ''}`;
+      bar.style.width = indeterminate ? '100%' : `${pct}%`;
+    }
+    if (label) label.textContent = isPending ? 'Heal queued…' : 'Healing…';
+    if (pctEl) pctEl.textContent = pct > 0 ? `${pct}%` : '';
+    if (items) items.textContent = job.total_items > 0 ? `${job.processed_items} / ${job.total_items} items` : 'Loading…';
+  }
+
+  async function pollHealJob() {
+    try {
+      const res = await fetch('/api/proxy/sync/status', { headers: { 'Authorization': `Bearer ${token}` } });
+      if (!res.ok) return;
+      const jobs: any[] = await res.json();
+      const job = jobs.find((j: any) => j.source === 'tmdb' && j.job_type === 'heal');
+      const isActive = job && (job.status === 'pending' || job.status === 'running');
+      const isRecentDone = job && (job.status === 'completed' || job.status === 'failed')
+        && new Date(job.updated_at).getTime() > Date.now() - 8000;
+      renderHealProgress((isActive || isRecentDone) ? job : null);
+      if (isActive) {
+        healPoller = setTimeout(pollHealJob, 2000);
+      } else if (isRecentDone) {
+        healPoller = setTimeout(() => { renderHealProgress(null); healPoller = null; }, 4000);
+      } else {
+        healPoller = null;
+      }
+    } catch {
+      healPoller = null;
+    }
+  }
+
+  function startHealPoller() {
+    if (healPoller != null) clearTimeout(healPoller);
+    pollHealJob();
+  }
+
   // On page load, resume any in-progress jobs
   (async () => {
     try {
@@ -1695,6 +1781,9 @@ if (me.totp_enabled) {
         }
         if (job.source === 'trakt' && (job.status === 'pending' || job.status === 'running')) {
           startTraktPoller();
+        }
+        if (job.source === 'tmdb' && job.job_type === 'heal' && (job.status === 'pending' || job.status === 'running')) {
+          startHealPoller();
         }
       }
     } catch { /* non-fatal */ }
@@ -3200,7 +3289,7 @@ if (me.totp_enabled) {
           headers: { 'Authorization': `Bearer ${token}` },
         });
         if (res.ok) {
-          showMessage('Metadata heal started — it will run in the background.');
+          startHealPoller();
         } else {
           const data = await res.json();
           throw new Error(data.detail || 'Failed to start heal');
