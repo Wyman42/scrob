@@ -259,10 +259,10 @@ const refreshUrl = isEpisode
                     <div class="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg">
                       {s.logo ? (
                         <img src={s.logo} alt={s.name} class="w-5 h-5 rounded object-cover" />
+                      ) : (s.type === "plex" || s.type === "jellyfin" || s.type === "emby") ? (
+                        <img src={`/icons/${s.type}.svg`} alt={s.name} class="w-5 h-5 rounded object-cover" />
                       ) : (
-                        <span class="text-zinc-400 text-xs">
-                          {s.type === "plex" ? "🟡" : s.type === "jellyfin" ? "🟣" : s.type === "emby" ? "🟢" : "▶"}
-                        </span>
+                        <span class="text-zinc-400 text-xs">▶</span>
                       )}
                       <span class="text-zinc-300 text-xs font-semibold">{s.name}</span>
                     </div>
