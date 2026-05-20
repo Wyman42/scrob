@@ -17,6 +17,8 @@ from models.media import Media
 from models.collection import Collection
 from models.sync import SyncJob, SyncStatus
 from models.base import CollectionSource, MediaType
+from models.media_request import MediaRequest, RequestStatus
+from models.users import UserSettings
 from dependencies import require_admin
 from core.url_validator import validate_service_url
 from core.backup import asyncpg_conn, restore_backup
@@ -267,3 +269,132 @@ async def restore_database(
         raise HTTPException(status_code=400, detail=str(e))
 
     return {"status": "restored"}
+
+
+# ── Media requests (approval queue) ──────────────────────────────────────────
+
+@router.get("/requests/pending-count")
+async def pending_requests_count(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    result = await db.execute(
+        select(func.count()).select_from(MediaRequest).where(MediaRequest.status == RequestStatus.pending)
+    )
+    return {"pending": result.scalar_one()}
+
+
+@router.get("/requests")
+async def list_requests(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    result = await db.execute(
+        select(MediaRequest, User)
+        .join(User, User.id == MediaRequest.user_id)
+        .order_by(MediaRequest.updated_at.desc())
+    )
+    rows = result.all()
+    return [
+        {
+            "id":          req.id,
+            "tmdb_id":     req.tmdb_id,
+            "media_type":  req.media_type,
+            "title":       req.title,
+            "poster_path": req.poster_path,
+            "status":      req.status.value,
+            "reviewed_by": req.reviewed_by,
+            "created_at":  req.created_at,
+            "updated_at":  req.updated_at,
+            "user": {
+                "id":           user.id,
+                "username":     user.username,
+                "display_name": user.username,
+            },
+        }
+        for req, user in rows
+    ]
+
+
+@router.post("/requests/{request_id}/approve")
+async def approve_request(
+    request_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    req_q = await db.execute(select(MediaRequest).where(MediaRequest.id == request_id))
+    req = req_q.scalar_one_or_none()
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    gs = await _get_or_create_global_settings(db)
+    settings_q = await db.execute(select(UserSettings).where(UserSettings.user_id == req.user_id))
+    settings = settings_q.scalar_one_or_none()
+
+    if req.media_type == "movie":
+        from routers.media import _effective_radarr
+        from core import radarr as radarr_core
+        radarr_cfg = _effective_radarr(settings, gs)
+        if not radarr_cfg:
+            raise HTTPException(status_code=400, detail="Radarr not configured")
+        try:
+            await radarr_core.add_movie(
+                url=radarr_cfg.radarr_url,
+                token=radarr_cfg.radarr_token,
+                tmdb_id=req.tmdb_id,
+                title=req.title or "",
+                root_folder=radarr_cfg.radarr_root_folder,
+                quality_profile_id=radarr_cfg.radarr_quality_profile,
+                tags=radarr_cfg.radarr_tags,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Radarr error: {e}")
+
+    elif req.media_type == "series":
+        from routers.media import _effective_sonarr, get_user_tmdb_key
+        from core import sonarr as sonarr_core, tmdb as tmdb_core
+        sonarr_cfg = _effective_sonarr(settings, gs)
+        if not sonarr_cfg:
+            raise HTTPException(status_code=400, detail="Sonarr not configured")
+        try:
+            tmdb_key = await get_user_tmdb_key(db, current_user.id)
+            ext_ids = await tmdb_core.get_external_ids(req.tmdb_id, "tv", api_key=tmdb_key)
+            tvdb_id = ext_ids.get("tvdb_id")
+            if not tvdb_id:
+                raise HTTPException(status_code=400, detail="Could not find TVDB ID")
+            await sonarr_core.add_series(
+                url=sonarr_cfg.sonarr_url,
+                token=sonarr_cfg.sonarr_token,
+                tvdb_id=tvdb_id,
+                root_folder=sonarr_cfg.sonarr_root_folder,
+                quality_profile_id=sonarr_cfg.sonarr_quality_profile,
+                tags=sonarr_cfg.sonarr_tags,
+                season_folder=sonarr_cfg.sonarr_season_folder if sonarr_cfg.sonarr_season_folder is not None else True,
+            )
+        except Exception as e:
+            if isinstance(e, HTTPException): raise e
+            raise HTTPException(status_code=500, detail=f"Sonarr error: {e}")
+
+    req.status = RequestStatus.approved
+    req.reviewed_by = current_user.id
+    req.updated_at = func.now()
+    await db.commit()
+    return {"status": "approved"}
+
+
+@router.post("/requests/{request_id}/reject")
+async def reject_request(
+    request_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    req_q = await db.execute(select(MediaRequest).where(MediaRequest.id == request_id))
+    req = req_q.scalar_one_or_none()
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    req.status = RequestStatus.rejected
+    req.reviewed_by = current_user.id
+    req.updated_at = func.now()
+    await db.commit()
+    return {"status": "rejected"}

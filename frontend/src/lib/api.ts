@@ -303,6 +303,21 @@ export interface GlobalSettings {
   sonarr_quality_profile: number | null;
   sonarr_tags: number[] | null;
   sonarr_season_folder: boolean;
+  radarr_require_approval: boolean;
+  sonarr_require_approval: boolean;
+}
+
+export interface MediaRequestItem {
+  id: number;
+  tmdb_id: number;
+  media_type: string;
+  title: string;
+  poster_path: string | null;
+  status: "pending" | "approved" | "rejected";
+  reviewed_by: number | null;
+  created_at: string;
+  updated_at: string;
+  user: { id: number; username: string; display_name: string };
 }
 
 export interface LoginResponse {
@@ -1060,5 +1075,13 @@ export const api = {
       patch<AdminUser>(`/admin/users/${userId}/toggle-admin`, undefined, token),
     deleteUser: (userId: number, token: string) =>
       del<{ status: string }>(`/admin/users/${userId}`, token),
+    getPendingCount: (token: string) =>
+      get<{ pending: number }>("/admin/requests/pending-count", undefined, token),
+    getRequests: (token: string) =>
+      get<MediaRequestItem[]>("/admin/requests", undefined, token),
+    approveRequest: (requestId: number, token: string) =>
+      post<{ status: string }>(`/admin/requests/${requestId}/approve`, undefined, token),
+    rejectRequest: (requestId: number, token: string) =>
+      post<{ status: string }>(`/admin/requests/${requestId}/reject`, undefined, token),
   },
 };

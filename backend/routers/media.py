@@ -20,6 +20,7 @@ from models.events import WatchEvent
 from models.ratings import Rating
 from models.base import MediaType, CollectionSource
 from models.lists import List as UserList, ListItem
+from models.media_request import MediaRequest, RequestStatus
 from models.profile import UserProfileData
 from core import tmdb
 from dependencies import get_current_user
@@ -160,6 +161,28 @@ async def enrich_with_state(
                 t = item.get("type")
                 if t == "movie": request_enabled_map[tid] = radarr_ready
                 elif t == "series": request_enabled_map[tid] = sonarr_ready
+
+    # --- Pending/rejected request state ---
+    request_status_map: dict[int, str] = {}
+    if len(items) == 1:
+        item = items[0]
+        tid = item.get("tmdb_id")
+        t   = item.get("type")
+        if t in ("movie", "series") and tid:
+            req_q = await db.execute(
+                select(MediaRequest)
+                .where(
+                    MediaRequest.user_id == user_id,
+                    MediaRequest.tmdb_id == tid,
+                    MediaRequest.media_type == t,
+                    MediaRequest.status.in_([RequestStatus.pending, RequestStatus.rejected]),
+                )
+                .order_by(MediaRequest.updated_at.desc())
+                .limit(1)
+            )
+            req = req_q.scalar_one_or_none()
+            if req:
+                request_status_map[tid] = req.status.value
 
     # --- Watched state ---
     watched_movies: set[int] = set()
@@ -496,6 +519,7 @@ async def enrich_with_state(
         item["in_lists"] = list_membership.get(tid, [])
         item["is_monitored"] = monitored_status.get(tid, False)
         item["request_enabled"] = request_enabled_map.get(tid, False)
+        item["request_status"] = request_status_map.get(tid)
         item["user_rating"] = user_ratings.get((tid, t))
         item["play_count"] = play_count_map.get(tid, 0)
 
@@ -2554,10 +2578,49 @@ async def request_media(
     settings = settings_q.scalar_one_or_none()
     gs = await _get_global_settings(db)
 
+    async def _upsert_request(media_type_str: str, title: str, poster_path: str | None) -> dict:
+        """Create or update a pending media request, return 202 response."""
+        existing_q = await db.execute(
+            select(MediaRequest).where(
+                MediaRequest.user_id == current_user.id,
+                MediaRequest.tmdb_id == tmdb_id,
+                MediaRequest.media_type == media_type_str,
+            )
+        )
+        existing = existing_q.scalar_one_or_none()
+        if existing:
+            if existing.status == RequestStatus.approved:
+                raise HTTPException(status_code=409, detail="Already approved and added")
+            existing.status = RequestStatus.pending
+            existing.updated_at = func.now()
+        else:
+            db.add(MediaRequest(
+                user_id=current_user.id,
+                tmdb_id=tmdb_id,
+                media_type=media_type_str,
+                title=title,
+                poster_path=poster_path,
+                status=RequestStatus.pending,
+            ))
+        await db.commit()
+        return {"status": "pending_approval", "message": "Request submitted for admin approval"}
+
     if type == MediaType.movie:
         radarr_cfg = _effective_radarr(settings, gs)
         if not radarr_cfg:
             raise HTTPException(status_code=400, detail="Radarr not configured in settings")
+
+        uses_global = gs and radarr_cfg is gs and not current_user.is_admin
+        if uses_global and gs.radarr_require_approval:
+            tmdb_key = await get_user_tmdb_key(db, current_user.id)
+            title, poster = "", None
+            try:
+                from core import tmdb as tmdb_core
+                movie_data = await tmdb_core.get_movie(tmdb_id, api_key=tmdb_key)
+                title = movie_data.get("title") or ""
+                poster = tmdb_core.poster_url(movie_data.get("poster_path")) if movie_data.get("poster_path") else None
+            except Exception: pass
+            return await _upsert_request("movie", title, poster)
 
         from core import radarr
         try:
@@ -2578,6 +2641,18 @@ async def request_media(
         sonarr_cfg = _effective_sonarr(settings, gs)
         if not sonarr_cfg:
             raise HTTPException(status_code=400, detail="Sonarr not configured in settings")
+
+        uses_global = gs and sonarr_cfg is gs and not current_user.is_admin
+        if uses_global and gs.sonarr_require_approval:
+            tmdb_key = await get_user_tmdb_key(db, current_user.id)
+            title, poster = "", None
+            try:
+                from core import tmdb as tmdb_core
+                show_data = await tmdb_core.get_show(tmdb_id, api_key=tmdb_key)
+                title = show_data.get("name") or ""
+                poster = tmdb_core.poster_url(show_data.get("poster_path")) if show_data.get("poster_path") else None
+            except Exception: pass
+            return await _upsert_request("series", title, poster)
 
         from core import sonarr, tmdb
         try:
@@ -3698,6 +3773,7 @@ async def get_media_details(
             "collection_pct": state_item.get("collection_pct", 100 if local_info["in_library"] else 0),
             "is_monitored": state_item.get("is_monitored", False),
             "request_enabled": state_item.get("request_enabled", False),
+            "request_status": state_item.get("request_status"),
             "title": data.get("title") or data.get("name"),
             "original_title": data.get("original_title") or data.get("original_name"),
             "overview": data.get("overview"),

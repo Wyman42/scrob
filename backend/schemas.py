@@ -286,7 +286,25 @@ class GlobalSettings(BaseModel):
     sonarr_root_folder     : Optional[str] = None
     sonarr_quality_profile : Optional[int] = None
     sonarr_tags            : Optional[list] = None
-    sonarr_season_folder   : bool = True
+    sonarr_season_folder        : bool = True
+    radarr_require_approval     : bool = False
+    sonarr_require_approval     : bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class MediaRequestOut(BaseModel):
+    id          : int
+    user_id     : int
+    tmdb_id     : int
+    media_type  : str
+    title       : str
+    poster_path : Optional[str]
+    status      : str
+    reviewed_by : Optional[int]
+    created_at  : datetime
+    updated_at  : datetime
 
     class Config:
         from_attributes = True
