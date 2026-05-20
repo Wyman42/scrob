@@ -1230,9 +1230,12 @@ async def recently_added(
     return {"results": items}
 
 
+_PERSON_PAGE_SIZE = 20
+
 @router.get("/person/{person_id}")
 async def get_person_details(
     person_id: int,
+    page: int = Query(1, ge=1),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -1271,7 +1274,9 @@ async def get_person_details(
                 seen[tid] = len(deduped)
                 deduped.append(credit)
         deduped.sort(key=lambda x: x["popularity"], reverse=True)
-        top_credits = deduped[:40]
+        total_credits = len(deduped)
+        start = (page - 1) * _PERSON_PAGE_SIZE
+        top_credits = deduped[start:start + _PERSON_PAGE_SIZE]
         await enrich_with_state(db, current_user.id, top_credits)
 
         # Which of the user's lists contain this person?
@@ -1299,6 +1304,9 @@ async def get_person_details(
             "place_of_birth": data.get("place_of_birth"),
             "known_for_department": data.get("known_for_department"),
             "credits": top_credits,
+            "total_credits": total_credits,
+            "page": page,
+            "page_size": _PERSON_PAGE_SIZE,
             "in_lists": person_in_lists,
         }
     except Exception as e:

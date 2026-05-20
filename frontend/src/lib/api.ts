@@ -203,6 +203,9 @@ export interface PersonDetail {
   birthday: string | null;
   place_of_birth: string | null;
   credits: PersonCredit[];
+  total_credits: number;
+  page: number;
+  page_size: number;
   in_lists: number[];
 }
 
@@ -863,8 +866,8 @@ export const api = {
     getRecommendations: (type: string, tmdbId: number, token?: string) =>
       get<{ results: MediaItem[] }>(`/media/${type}/${tmdbId}/recommendations`, undefined, token),
 
-    getPerson: (personId: number, token?: string) =>
-      get<PersonDetail>(`/media/person/${personId}`, undefined, token),
+    getPerson: (personId: number, page: number = 1, token?: string) =>
+      get<PersonDetail>(`/media/person/${personId}`, { page }, token),
 
     getCollection: (collectionId: number, token?: string) =>
       get<CollectionDetail>(`/media/collection/${collectionId}`, undefined, token),
