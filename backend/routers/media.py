@@ -1258,8 +1258,20 @@ async def get_person_details(
                     "adult": c.get("adult", False),
                 }
             )
-        formatted_credits.sort(key=lambda x: x["popularity"], reverse=True)
-        top_credits = formatted_credits[:40]
+        # Deduplicate by tmdb_id — a person may appear in multiple episodes of the
+        # same show; keep the entry with the highest popularity score.
+        seen: dict[int, int] = {}  # tmdb_id -> index in formatted_credits
+        deduped: list[dict] = []
+        for credit in formatted_credits:
+            tid = credit["tmdb_id"]
+            if tid in seen:
+                if credit["popularity"] > deduped[seen[tid]]["popularity"]:
+                    deduped[seen[tid]] = credit
+            else:
+                seen[tid] = len(deduped)
+                deduped.append(credit)
+        deduped.sort(key=lambda x: x["popularity"], reverse=True)
+        top_credits = deduped[:40]
         await enrich_with_state(db, current_user.id, top_credits)
 
         # Which of the user's lists contain this person?
