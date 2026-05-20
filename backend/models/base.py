@@ -20,6 +20,7 @@ class CollectionSource(str, enum.Enum):
     emby     = "emby"
     plex     = "plex"
     trakt    = "trakt"
+    simkl    = "simkl"
     manual   = "manual"
 
 class PrivacyLevel(str, enum.Enum):

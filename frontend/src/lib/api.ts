@@ -380,6 +380,15 @@ export interface UserSettings {
   trakt_push_ratings: boolean;
   trakt_push_lists: boolean;
 
+  // Simkl
+  simkl_client_id: string | null;
+  simkl_connected: boolean;
+  simkl_sync_watched: boolean;
+  simkl_sync_ratings: boolean;
+  simkl_sync_lists: boolean;
+  simkl_push_watched: boolean;
+  simkl_push_ratings: boolean;
+
   preferences: UserPreferences | null;
   blur_explicit: boolean;
   time_format_24h: boolean;
@@ -459,6 +468,7 @@ export interface ConnectionStatus {
   radarr: ServiceStatus;
   sonarr: ServiceStatus;
   trakt: ServiceStatus;
+  simkl: ServiceStatus;
 }
 
 export interface MediaItem {
@@ -828,6 +838,19 @@ export const api = {
       del<{ status: string }>("/trakt/auth/disconnect", token),
     sync: (token: string) =>
       post<{ status: string; job_id: number; message: string }>("/trakt/sync", undefined, token),
+  },
+
+  simkl: {
+    pinStart: (token: string) =>
+      post<{ user_code: string; url: string; expires_in: number; interval: number }>("/simkl/auth/pin/start", undefined, token),
+    pinPoll: (token: string) =>
+      post<{ status: "pending" | "connected" }>("/simkl/auth/pin/poll", undefined, token),
+    disconnect: (token: string) =>
+      del<{ status: string }>("/simkl/auth/disconnect", token),
+    sync: (token: string) =>
+      post<{ status: string; job_id: number; message: string }>("/simkl/sync", undefined, token),
+    push: (token: string) =>
+      post<{ status: string; message: string }>("/simkl/push", undefined, token),
   },
 
   media: {

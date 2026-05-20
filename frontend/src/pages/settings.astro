@@ -518,6 +518,19 @@ if (me.totp_enabled) {
                   </svg>
                 </div>
               </div>
+              <div id="trakt-progress" class="hidden border-t border-zinc-800 px-6 py-3">
+                <div class="flex justify-between items-center mb-1.5">
+                  <span id="trakt-job-label" class="text-xs font-semibold uppercase tracking-wider text-zinc-500">Working…</span>
+                  <span id="trakt-job-pct" class="text-xs font-bold text-zinc-400"></span>
+                </div>
+                <div class="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden">
+                  <div id="trakt-job-bar" class="h-1.5 rounded-full transition-all duration-500 bg-red-500 animate-pulse" style="width: 100%"></div>
+                </div>
+                <div class="flex justify-between text-xs text-zinc-500 mt-1">
+                  <span id="trakt-job-items"></span>
+                  <span id="trakt-job-status"></span>
+                </div>
+              </div>
               <div id="trakt-body" class="border-t border-zinc-800 hidden">
                 <div class="grid md:grid-cols-2 gap-8 px-6 py-6">
                   <!-- Left: Auth / Info -->
@@ -613,6 +626,116 @@ if (me.totp_enabled) {
                           data-action="push_trakt"
                           class="js-action-btn text-sm bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
                           title="Push all watched states and ratings from Scrob to Trakt"
+                        >Push</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <!-- Simkl collapsible row -->
+            <div class="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+              <div class="collapsible-header flex items-center justify-between px-6 py-4 hover:bg-zinc-900/40 cursor-pointer transition-colors select-none" data-target="simkl-body">
+                <div class="flex items-center gap-3 pointer-events-none">
+                  <span class="w-2 h-2 bg-teal-400 rounded-full shrink-0"></span>
+                  <div class="flex flex-col gap-0.5">
+                    <span class="font-medium text-zinc-200">Simkl</span>
+                    <span id="simkl-conn-status" class="hidden text-xs font-normal px-1.5 py-0.5 rounded self-start pointer-events-auto"></span>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <div class="flex gap-2" onclick="event.stopPropagation()">
+                    {settings.simkl_connected ? (
+                      <button type="button" id="simkl-disconnect-btn" class="js-action-btn text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-3 py-1.5 rounded-lg transition-colors cursor-pointer">Disconnect</button>
+                    ) : (
+                      <button type="button" id="simkl-connect-btn" class="text-sm bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 border border-teal-500/30 px-3 py-1.5 rounded-lg transition-colors cursor-pointer">Connect Simkl</button>
+                    )}
+                  </div>
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="collapsible-chevron w-4 h-4 text-zinc-500 transition-transform pointer-events-none ml-1 shrink-0">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                  </svg>
+                </div>
+              </div>
+              <div id="simkl-progress" class="hidden border-t border-zinc-800 px-6 py-3">
+                <div class="flex justify-between items-center mb-1.5">
+                  <span id="simkl-job-label" class="text-xs font-semibold uppercase tracking-wider text-zinc-500">Working…</span>
+                  <span id="simkl-job-pct" class="text-xs font-bold text-zinc-400"></span>
+                </div>
+                <div class="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden">
+                  <div id="simkl-job-bar" class="h-1.5 rounded-full transition-all duration-500 bg-blue-600 animate-pulse" style="width: 100%"></div>
+                </div>
+                <div class="flex justify-between text-xs text-zinc-500 mt-1">
+                  <span id="simkl-job-items"></span>
+                  <span id="simkl-job-status"></span>
+                </div>
+              </div>
+              <div id="simkl-body" class="border-t border-zinc-800 hidden">
+                <div class="grid md:grid-cols-2 gap-8 px-6 py-6">
+                  <!-- Left: Auth / Info -->
+                  <div class="space-y-4">
+                    <div class="space-y-2">
+                      <label for="simkl_client_id" class="block text-sm font-medium text-zinc-400">Client ID</label>
+                      <input
+                        type="text"
+                        name="simkl_client_id"
+                        id="simkl_client_id"
+                        value={settings.simkl_client_id || ""}
+                        placeholder="Your Simkl application Client ID"
+                        class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-3 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all"
+                      />
+                      <p class="text-xs text-zinc-500">Create a Simkl application at <span class="text-zinc-400">simkl.com/settings/developer</span> to get your Client ID.</p>
+                    </div>
+                    <div id="simkl-auth-panel" class="hidden space-y-3 bg-zinc-900/50 border border-zinc-700 rounded-xl p-4">
+                      <p class="text-sm text-zinc-400">Go to <strong id="simkl-verify-url" class="text-zinc-100"></strong> and enter this PIN:</p>
+                      <div class="font-mono text-2xl font-bold tracking-widest text-zinc-100 bg-zinc-950 border border-zinc-700 rounded-lg px-4 py-3 text-center select-all" id="simkl-user-code"></div>
+                      <p class="text-xs text-zinc-500" id="simkl-auth-status">Waiting for authorization…</p>
+                    </div>
+                    <p class="text-sm text-zinc-400">
+                      {settings.simkl_connected
+                        ? "Simkl is connected. Use Pull to import your watched history and ratings."
+                        : "Enter your Client ID, then click Connect Simkl."}
+                    </p>
+                  </div>
+                  <!-- Right: Sync Preferences (only if connected) -->
+                  {settings.simkl_connected && (
+                    <div class="space-y-4">
+                      <div class="bg-zinc-950 rounded-xl p-4 space-y-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Simkl → Scrob</p>
+                        {[
+                          { key: "simkl_sync_watched", label: "Watched history" },
+                          { key: "simkl_sync_ratings", label: "Ratings" },
+                          { key: "simkl_sync_lists",   label: "Lists / Watchlist" },
+                        ].map(({ key, label }) => (
+                          <label class="flex items-center gap-3 cursor-pointer group">
+                            <input type="checkbox" name={key} id={key} checked={settings[key as keyof typeof settings] !== false} class="sync-pref-checkbox w-4 h-4 rounded accent-teal-500 cursor-pointer" />
+                            <span class="text-sm text-zinc-300 group-hover:text-zinc-100 transition-colors">{label}</span>
+                          </label>
+                        ))}
+                        <button
+                          type="button"
+                          data-action="sync_simkl"
+                          disabled={!hasTmdbKey}
+                          title={!hasTmdbKey ? "TMDB API Key is required for sync" : "Pull watched history and ratings from Simkl"}
+                          class={`js-action-btn text-sm px-3 py-1.5 rounded-lg transition-colors cursor-pointer disabled:opacity-50 ${hasTmdbKey ? "bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 border border-teal-500/30" : "bg-zinc-800 text-zinc-400 border border-zinc-700 opacity-50"}`}
+                        >Pull</button>
+                      </div>
+                      <div class="bg-zinc-950 rounded-xl p-4 space-y-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Scrob → Simkl</p>
+                        {[
+                          { key: "simkl_push_watched", label: "Watched status" },
+                          { key: "simkl_push_ratings", label: "Ratings" },
+                        ].map(({ key, label }) => (
+                          <label class="flex items-center gap-3 cursor-pointer group">
+                            <input type="checkbox" name={key} id={key} checked={!!settings[key as keyof typeof settings]} class="sync-pref-checkbox w-4 h-4 rounded accent-teal-500 cursor-pointer" />
+                            <span class="text-sm text-zinc-300 group-hover:text-zinc-100 transition-colors">{label}</span>
+                          </label>
+                        ))}
+                        <button
+                          type="button"
+                          data-action="push_simkl"
+                          class="js-action-btn text-sm bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 border border-teal-500/30 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+                          title="Push all watched states and ratings from Scrob to Simkl"
                         >Push</button>
                       </div>
                     </div>
@@ -1402,6 +1525,159 @@ if (me.totp_enabled) {
     pollConnJob(connId);
   }
 
+  // ── Simkl progress tracking ───────────────────────────────────────────────
+  let simklPoller: ReturnType<typeof setTimeout> | null = null;
+
+  function renderSimklProgress(job: any) {
+    const strip  = document.getElementById('simkl-progress');
+    const bar    = document.getElementById('simkl-job-bar');
+    const pctEl  = document.getElementById('simkl-job-pct');
+    const label  = document.getElementById('simkl-job-label');
+    const items  = document.getElementById('simkl-job-items');
+    if (!strip) return;
+
+    if (!job) { strip.classList.add('hidden'); return; }
+    strip.classList.remove('hidden');
+
+    const isPush     = job.job_type === 'push';
+    const isFailed   = job.status === 'failed';
+    const isCompleted = job.status === 'completed';
+    const isPending  = job.status === 'pending';
+
+    if (isFailed) {
+      if (bar) { bar.className = 'h-1.5 rounded-full transition-all duration-500 bg-red-500'; bar.style.width = '100%'; }
+      if (label) label.textContent = isPush ? 'Push failed' : 'Pull failed';
+      if (pctEl) pctEl.textContent = '';
+      if (items) items.textContent = esc(job.error_message || 'Unknown error');
+      return;
+    }
+
+    if (isCompleted) {
+      if (bar) { bar.className = `h-1.5 rounded-full transition-all duration-500 ${isPush ? 'bg-amber-500' : 'bg-blue-600'}`; bar.style.width = '100%'; }
+      if (label) label.textContent = isPush ? 'Push complete' : 'Pull complete';
+      if (pctEl) pctEl.textContent = '100%';
+      const s = job.stats;
+      if (items) items.textContent = s
+        ? `${s.movies ?? 0} movies, ${s.episodes ?? 0} episodes, ${s.ratings ?? 0} ratings`
+        : `${job.processed_items} items`;
+      return;
+    }
+
+    const pct = job.total_items > 0 ? Math.min(100, Math.round((job.processed_items / job.total_items) * 100)) : 0;
+    const barColor = isPush ? 'bg-amber-500' : 'bg-blue-600';
+    const indeterminate = isPending || pct === 0;
+    if (bar) {
+      bar.className = `h-1.5 rounded-full transition-all duration-500 ${barColor}${indeterminate ? ' animate-pulse' : ''}`;
+      bar.style.width = indeterminate ? '100%' : `${pct}%`;
+    }
+    if (label) label.textContent = isPush ? (isPending ? 'Push queued…' : 'Pushing…') : (isPending ? 'Pull queued…' : 'Pulling…');
+    if (pctEl) pctEl.textContent = pct > 0 ? `${pct}%` : '';
+    if (items) items.textContent = job.total_items > 0 ? `${job.processed_items} / ${job.total_items} items` : 'Loading…';
+  }
+
+  async function pollSimklJob() {
+    try {
+      const res = await fetch('/api/proxy/sync/status', { headers: { 'Authorization': `Bearer ${token}` } });
+      if (!res.ok) return;
+      const jobs: any[] = await res.json();
+      const job = jobs.find(j => j.source === 'simkl');
+      const isActive = job && (job.status === 'pending' || job.status === 'running');
+      const isRecentDone = job && (job.status === 'completed' || job.status === 'failed')
+        && new Date(job.updated_at).getTime() > Date.now() - 8000;
+      renderSimklProgress((isActive || isRecentDone) ? job : null);
+      if (isActive) {
+        simklPoller = setTimeout(pollSimklJob, 2000);
+      } else if (isRecentDone) {
+        simklPoller = setTimeout(() => { renderSimklProgress(null); simklPoller = null; }, 4000);
+      } else {
+        simklPoller = null;
+      }
+    } catch {
+      simklPoller = null;
+    }
+  }
+
+  function startSimklPoller() {
+    if (simklPoller != null) clearTimeout(simklPoller);
+    pollSimklJob();
+  }
+
+  // ── Trakt progress tracking ───────────────────────────────────────────────
+  let traktPoller: ReturnType<typeof setTimeout> | null = null;
+
+  function renderTraktProgress(job: any) {
+    const strip  = document.getElementById('trakt-progress');
+    const bar    = document.getElementById('trakt-job-bar');
+    const pctEl  = document.getElementById('trakt-job-pct');
+    const label  = document.getElementById('trakt-job-label');
+    const items  = document.getElementById('trakt-job-items');
+    if (!strip) return;
+
+    if (!job) { strip.classList.add('hidden'); return; }
+    strip.classList.remove('hidden');
+
+    const isPush      = job.job_type === 'push';
+    const isFailed    = job.status === 'failed';
+    const isCompleted = job.status === 'completed';
+    const isPending   = job.status === 'pending';
+
+    if (isFailed) {
+      if (bar) { bar.className = 'h-1.5 rounded-full transition-all duration-500 bg-red-500'; bar.style.width = '100%'; }
+      if (label) label.textContent = isPush ? 'Push failed' : 'Pull failed';
+      if (pctEl) pctEl.textContent = '';
+      if (items) items.textContent = esc(job.error_message || 'Unknown error');
+      return;
+    }
+
+    if (isCompleted) {
+      if (bar) { bar.className = 'h-1.5 rounded-full transition-all duration-500 bg-red-500'; bar.style.width = '100%'; }
+      if (label) label.textContent = isPush ? 'Push complete' : 'Pull complete';
+      if (pctEl) pctEl.textContent = '100%';
+      const s = job.stats;
+      if (items) items.textContent = s
+        ? `${s.succeeded ?? 0} ok, ${s.failed ?? 0} failed`
+        : `${job.processed_items} items`;
+      return;
+    }
+
+    const pct = job.total_items > 0 ? Math.min(100, Math.round((job.processed_items / job.total_items) * 100)) : 0;
+    const indeterminate = isPending || pct === 0;
+    if (bar) {
+      bar.className = `h-1.5 rounded-full transition-all duration-500 bg-red-500${indeterminate ? ' animate-pulse' : ''}`;
+      bar.style.width = indeterminate ? '100%' : `${pct}%`;
+    }
+    if (label) label.textContent = isPush ? (isPending ? 'Push queued…' : 'Pushing…') : (isPending ? 'Pull queued…' : 'Pulling…');
+    if (pctEl) pctEl.textContent = pct > 0 ? `${pct}%` : '';
+    if (items) items.textContent = job.total_items > 0 ? `${job.processed_items} / ${job.total_items} items` : 'Loading…';
+  }
+
+  async function pollTraktJob() {
+    try {
+      const res = await fetch('/api/proxy/sync/status', { headers: { 'Authorization': `Bearer ${token}` } });
+      if (!res.ok) return;
+      const jobs: any[] = await res.json();
+      const job = jobs.find(j => j.source === 'trakt');
+      const isActive = job && (job.status === 'pending' || job.status === 'running');
+      const isRecentDone = job && (job.status === 'completed' || job.status === 'failed')
+        && new Date(job.updated_at).getTime() > Date.now() - 8000;
+      renderTraktProgress((isActive || isRecentDone) ? job : null);
+      if (isActive) {
+        traktPoller = setTimeout(pollTraktJob, 2000);
+      } else if (isRecentDone) {
+        traktPoller = setTimeout(() => { renderTraktProgress(null); traktPoller = null; }, 4000);
+      } else {
+        traktPoller = null;
+      }
+    } catch {
+      traktPoller = null;
+    }
+  }
+
+  function startTraktPoller() {
+    if (traktPoller != null) clearTimeout(traktPoller);
+    pollTraktJob();
+  }
+
   // On page load, resume any in-progress jobs
   (async () => {
     try {
@@ -1413,6 +1689,12 @@ if (me.totp_enabled) {
       for (const job of jobs) {
         if (job.connection_id && (job.status === 'pending' || job.status === 'running')) {
           startConnPoller(String(job.connection_id));
+        }
+        if (job.source === 'simkl' && (job.status === 'pending' || job.status === 'running')) {
+          startSimklPoller();
+        }
+        if (job.source === 'trakt' && (job.status === 'pending' || job.status === 'running')) {
+          startTraktPoller();
         }
       }
     } catch { /* non-fatal */ }
@@ -1485,16 +1767,18 @@ if (me.totp_enabled) {
   async function checkConnections() {
     if (!token) return;
     const traktConnected = !!document.getElementById('trakt-disconnect-btn');
+    const simklConnected = !!document.getElementById('simkl-disconnect-btn');
     const radarrConfigured = !!document.getElementById('radarr_url')?.value;
     const sonarrConfigured = !!document.getElementById('sonarr_url')?.value;
     const mediaServerIds = Array.from(document.querySelectorAll<HTMLElement>('[data-connection-id]'))
       .map(el => el.getAttribute('data-connection-id'))
       .filter(Boolean) as string[];
-    if (!radarrConfigured && !sonarrConfigured && !traktConnected && mediaServerIds.length === 0) return;
+    if (!radarrConfigured && !sonarrConfigured && !traktConnected && !simklConnected && mediaServerIds.length === 0) return;
 
     if (radarrConfigured) setConnStatus('radarr-conn-status', 'checking');
     if (sonarrConfigured) setConnStatus('sonarr-conn-status', 'checking');
     if (traktConnected) setConnStatus('trakt-conn-status', 'checking');
+    if (simklConnected) setConnStatus('simkl-conn-status', 'checking');
     for (const id of mediaServerIds) setConnStatus(`conn-status-${id}`, 'checking');
 
     try {
@@ -1536,6 +1820,9 @@ if (me.totp_enabled) {
       }
       if (data.trakt?.configured) {
         setConnStatus('trakt-conn-status', data.trakt.connected ? 'connected' : 'disconnected');
+      }
+      if (data.simkl?.configured) {
+        setConnStatus('simkl-conn-status', data.simkl.connected ? 'connected' : 'disconnected');
       }
       for (const cs of (data.connections ?? [])) {
         setConnStatus(`conn-status-${cs.id}`, cs.connected ? 'connected' : 'disconnected');
@@ -1935,6 +2222,49 @@ if (me.totp_enabled) {
             );
             if (!ok) return;
             url = `/api/proxy/trakt/sync`;
+          } else if (action === 'sync_simkl') {
+            const simklPullLabels: Record<string, string> = {
+              simkl_sync_watched: 'watched history',
+              simkl_sync_ratings: 'ratings',
+              simkl_sync_lists: 'lists',
+            };
+            const pulling: string[] = [];
+            document.querySelectorAll('.sync-pref-checkbox').forEach((el: any) => {
+              const name = el.getAttribute('name');
+              if (name && simklPullLabels[name] && el.checked) pulling.push(simklPullLabels[name]);
+            });
+            const noPull = pulling.length === 0;
+            const ok = await showConfirmModal(
+              noPull ? 'Nothing to pull' : 'Pull from Simkl?',
+              noPull
+                ? 'Your current settings have nothing selected to pull from Simkl. Enable at least one option in the "Simkl → Scrob" section.'
+                : `This will import your ${formatList(pulling)} from Simkl into Scrob.`,
+              noPull ? 'Got it' : 'Pull',
+              noPull
+            );
+            if (!ok) return;
+            url = `/api/proxy/simkl/sync`;
+          } else if (action === 'push_simkl') {
+            const simklPushLabels: Record<string, string> = {
+              simkl_push_watched: 'watched history',
+              simkl_push_ratings: 'ratings',
+            };
+            const pushing: string[] = [];
+            document.querySelectorAll('.sync-pref-checkbox').forEach((el: any) => {
+              const name = el.getAttribute('name');
+              if (name && simklPushLabels[name] && el.checked) pushing.push(simklPushLabels[name]);
+            });
+            const noPush = pushing.length === 0;
+            const ok = await showConfirmModal(
+              noPush ? 'Nothing to push' : 'Push to Simkl?',
+              noPush
+                ? 'Your current settings have nothing selected to push to Simkl. Enable at least one option in the "Scrob → Simkl" section.'
+                : `This will push your ${formatList(pushing)} from Scrob to Simkl. Existing data on Simkl may be overwritten.`,
+              noPush ? 'Got it' : 'Push',
+              noPush
+            );
+            if (!ok) return;
+            url = `/api/proxy/simkl/push`;
           } else if (action === 'push_trakt') {
             const traktPushLabels: Record<string, string> = {
               trakt_push_watched: 'watched history',
@@ -1968,6 +2298,8 @@ if (me.totp_enabled) {
           if (res.ok) {
             showMessage(data.message || 'Action successful!');
             if (syncConnId) startConnPoller(syncConnId);
+            if (action === 'sync_simkl' || action === 'push_simkl') startSimklPoller();
+            if (action === 'sync_trakt' || action === 'push_trakt') startTraktPoller();
           } else {
             if (syncConnId) renderConnProgress(syncConnId, null);
             throw new Error(data.detail || 'Action failed');
@@ -2088,6 +2420,111 @@ if (me.totp_enabled) {
       }
     }
     setupTraktAuth();
+
+    // Simkl PIN Auth
+    function setupSimklAuth() {
+      const connectBtn = document.getElementById('simkl-connect-btn');
+      const disconnectBtn = document.getElementById('simkl-disconnect-btn');
+
+      if (connectBtn) {
+        connectBtn.onclick = async () => {
+          connectBtn.disabled = true;
+          connectBtn.textContent = 'Starting…';
+          try {
+            // Auto-save client_id if not yet persisted
+            const clientIdInput = document.getElementById('simkl_client_id') as HTMLInputElement | null;
+            const clientId = clientIdInput?.value.trim() || '';
+            if (clientId) {
+              const saveRes = await fetch('/api/proxy/auth/settings', {
+                method: 'PATCH',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ simkl_client_id: clientId }),
+              });
+              if (!saveRes.ok) {
+                const err = await saveRes.json();
+                throw new Error(err.detail || 'Failed to save Simkl Client ID');
+              }
+            }
+
+            const res = await fetch('/api/proxy/simkl/auth/pin/start', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (!res.ok) {
+              const err = await res.json();
+              throw new Error(err.detail || 'Failed to start Simkl auth');
+            }
+            const data = await res.json();
+
+            const panel   = document.getElementById('simkl-auth-panel');
+            const urlEl   = document.getElementById('simkl-verify-url');
+            const codeEl  = document.getElementById('simkl-user-code');
+            const statusEl = document.getElementById('simkl-auth-status');
+            if (panel)  panel.classList.remove('hidden');
+            if (urlEl)  urlEl.textContent = data.url;
+            if (codeEl) codeEl.textContent = data.user_code;
+            connectBtn.textContent = 'Waiting…';
+
+            const interval = (data.interval || 5) * 1000;
+            const deadline = Date.now() + data.expires_in * 1000;
+            const poll = async () => {
+              if (Date.now() > deadline) {
+                if (statusEl) statusEl.textContent = 'Authorization timed out. Please try again.';
+                connectBtn.disabled = false;
+                connectBtn.textContent = 'Connect Simkl';
+                return;
+              }
+              try {
+                const pollRes = await fetch('/api/proxy/simkl/auth/pin/poll', {
+                  method: 'POST',
+                  headers: { 'Authorization': `Bearer ${token}` },
+                });
+                if (pollRes.ok) {
+                  const pollData = await pollRes.json();
+                  if (pollData.status === 'connected') {
+                    if (statusEl) statusEl.textContent = 'Connected! Reloading…';
+                    window.location.reload();
+                    return;
+                  }
+                } else {
+                  const err = await pollRes.json();
+                  if (statusEl) statusEl.textContent = `Error: ${err.detail || 'Authorization failed'}`;
+                  connectBtn.disabled = false;
+                  connectBtn.textContent = 'Connect Simkl';
+                  return;
+                }
+              } catch (e) {}
+              setTimeout(poll, interval);
+            };
+            setTimeout(poll, interval);
+          } catch (e) {
+            showMessage(e.message, 'error');
+            connectBtn.disabled = false;
+            connectBtn.textContent = 'Connect Simkl';
+          }
+        };
+      }
+
+      if (disconnectBtn) {
+        disconnectBtn.onclick = async () => {
+          if (!confirm('Disconnect Simkl? This will remove your Simkl token from Scrob.')) return;
+          disconnectBtn.disabled = true;
+          disconnectBtn.textContent = 'Disconnecting…';
+          try {
+            await fetch('/api/proxy/simkl/auth/disconnect', {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${token}` },
+            });
+            window.location.reload();
+          } catch (e) {
+            showMessage('Failed to disconnect Simkl', 'error');
+            disconnectBtn.disabled = false;
+            disconnectBtn.textContent = 'Disconnect';
+          }
+        };
+      }
+    }
+    setupSimklAuth();
 
     // Delete Account Logic
     const deleteBtn = document.getElementById('delete-account-btn');
@@ -2556,12 +2993,16 @@ if (me.totp_enabled) {
 
           trakt_client_id: formData.get('trakt_client_id') || null,
           trakt_client_secret: formData.get('trakt_client_secret') || null,
+
+          simkl_client_id: formData.get('simkl_client_id') || null,
         };
 
-        // Collect boolean checkboxes (Trakt sync prefs + app preferences)
+        // Collect boolean checkboxes (Trakt + Simkl sync prefs + app preferences)
         const syncKeys = [
           'trakt_sync_watched', 'trakt_sync_ratings', 'trakt_sync_lists', 'trakt_watchlist_split',
           'trakt_push_watched', 'trakt_push_ratings', 'trakt_push_lists',
+          'simkl_sync_watched', 'simkl_sync_ratings', 'simkl_sync_lists',
+          'simkl_push_watched', 'simkl_push_ratings',
           'blur_explicit',
           'time_format_24h',
         ] as const;
