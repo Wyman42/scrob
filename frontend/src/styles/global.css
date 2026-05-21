@@ -157,20 +157,10 @@ img, a {
   }
 }
 
-/* ── Now Playing bar — always render on a dark surface ─────────────────────
-   The bar uses a video backdrop or dark bg-zinc-900. In light mode zinc-900
-   remaps to white, making green-400 text illegible. Restore dark zinc values
-   for just this section so the bar looks correct in both themes. */
-html.light #now-playing-section {
-  --color-zinc-950: #09090b;
-  --color-zinc-900: #18181b;
-  --color-zinc-800: #27272a;
-  --color-zinc-700: #3f3f46;
-  --color-zinc-500: #71717a;
-  --color-zinc-400: #a1a1aa;
-  --color-zinc-300: #d4d4d8;
-  --color-zinc-100: #f4f4f5;
-}
+/* ── Now Playing bar — light mode status label colours ──────────────────────
+   green-400 / yellow-400 are illegible on a white surface; use darker shades. */
+html.light #now-playing-section .text-green-400 { color: #15803d; }
+html.light #now-playing-section .text-yellow-400 { color: #a16207; }
 
 #now-playing-section:empty {
   display: none;
