@@ -172,19 +172,20 @@ async def sync_shows_batch(
                 },
             })
 
-        stmt = insert(Show).values(values)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["tmdb_id"],
-            set_={
-                k: getattr(stmt.excluded, k)
-                for k in values[0].keys()
-                if k != "tmdb_id"
-            }
-        )
-        stmt = stmt.returning(Show)
-        res = await db.execute(stmt)
-        for s in res.scalars().all():
-            existing_shows[s.tmdb_id] = s
+        # Show has 12 value columns; 32767 / 12 = 2730 rows max per statement.
+        # Use BATCH_SIZE (500) to stay well under the asyncpg 32767-parameter limit.
+        update_cols = [k for k in values[0].keys() if k != "tmdb_id"]
+        for i in range(0, len(values), BATCH_SIZE):
+            chunk = values[i : i + BATCH_SIZE]
+            stmt = insert(Show).values(chunk)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["tmdb_id"],
+                set_={k: getattr(stmt.excluded, k) for k in update_cols},
+            )
+            stmt = stmt.returning(Show)
+            res = await db.execute(stmt)
+            for s in res.scalars().all():
+                existing_shows[s.tmdb_id] = s
 
     show_map: dict[str, int] = {}
     show_id_to_tmdb: dict[int, int] = {}
@@ -1819,19 +1820,22 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int) -> None:
                 return
 
             # Fast path: items we've already synced from this server have a known source_id
-            files_result = await db.execute(
-                select(CollectionFile.source_id, Collection.media_id)
-                .join(Collection, Collection.id == CollectionFile.collection_id)
-                .where(
-                    Collection.user_id == user_id,
-                    Collection.media_id.in_(all_media_ids),
-                    CollectionFile.source == conn_source,
-                    CollectionFile.source_id.isnot(None),
-                )
-            )
             source_ids_map: dict[int, list[str]] = {}
-            for source_id, media_id in files_result.all():
-                source_ids_map.setdefault(media_id, []).append(source_id)
+            all_media_list = list(all_media_ids)
+            for i in range(0, len(all_media_list), _MAX_IN_PARAMS):
+                chunk = all_media_list[i : i + _MAX_IN_PARAMS]
+                files_chunk = await db.execute(
+                    select(CollectionFile.source_id, Collection.media_id)
+                    .join(Collection, Collection.id == CollectionFile.collection_id)
+                    .where(
+                        Collection.user_id == user_id,
+                        Collection.media_id.in_(chunk),
+                        CollectionFile.source == conn_source,
+                        CollectionFile.source_id.isnot(None),
+                    )
+                )
+                for source_id, media_id in files_chunk.all():
+                    source_ids_map.setdefault(media_id, []).append(source_id)
 
             # Slow path: items not in source_ids_map need a live TMDB-based lookup on the server
             missing_ids = all_media_ids - set(source_ids_map.keys())
@@ -1839,14 +1843,22 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int) -> None:
             show_tmdb_map: dict[int, int] = {}  # show.id → show.tmdb_id
 
             if missing_ids:
-                media_rows = await db.execute(select(Media).where(Media.id.in_(missing_ids)))
-                for m in media_rows.scalars().all():
+                media_rows_list = await _select_in_chunks(
+                    db,
+                    lambda chunk: select(Media).where(Media.id.in_(chunk)),
+                    list(missing_ids),
+                )
+                for m in media_rows_list:
                     media_info[m.id] = m
 
                 show_ids_needed = {m.show_id for m in media_info.values() if m.show_id is not None}
                 if show_ids_needed:
-                    show_rows = await db.execute(select(Show.id, Show.tmdb_id).where(Show.id.in_(show_ids_needed)))
-                    show_tmdb_map = {row[0]: row[1] for row in show_rows.all()}
+                    show_ids_list = list(show_ids_needed)
+                    for i in range(0, len(show_ids_list), _MAX_IN_PARAMS):
+                        chunk = show_ids_list[i : i + _MAX_IN_PARAMS]
+                        show_rows = await db.execute(select(Show.id, Show.tmdb_id).where(Show.id.in_(chunk)))
+                        for row in show_rows.all():
+                            show_tmdb_map[row[0]] = row[1]
 
             # Build push list: (action, source_id, [rating])
             push_items: list[tuple] = []
