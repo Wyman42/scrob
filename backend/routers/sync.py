@@ -2556,7 +2556,7 @@ async def apply_season_override(
             tagline=show_data.get("tagline"),
             first_air_date=show_data.get("first_air_date"),
             last_air_date=show_data.get("last_air_date"),
-            tmdb_data={**show_data, "seasons": seasons_meta},
+            tmdb_data={**show_data, "seasons": seasons_meta, "genres": [g["name"] if isinstance(g, dict) else g for g in show_data.get("genres", [])]},
         )
         db.add(target_show)
         await db.flush()
@@ -2870,7 +2870,7 @@ async def match_unmatched_show(
                 tagline=show_data.get("tagline"),
                 first_air_date=show_data.get("first_air_date"),
                 last_air_date=show_data.get("last_air_date"),
-                tmdb_data={**show_data, "seasons": seasons_meta},
+                tmdb_data={**show_data, "seasons": seasons_meta, "genres": [g["name"] if isinstance(g, dict) else g for g in show_data.get("genres", [])]},
             )
             db.add(target_show)
             await db.flush()

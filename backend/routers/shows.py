@@ -52,7 +52,7 @@ def format_show(show: ShowModel) -> dict:
         "tagline": show.tagline,
         "first_air_date": show.first_air_date,
         "last_air_date": show.last_air_date,
-        "genres": (show.tmdb_data or {}).get("genres", []),
+        "genres": [g["name"] if isinstance(g, dict) else g for g in (show.tmdb_data or {}).get("genres", [])],
         "seasons_meta": (show.tmdb_data or {}).get("seasons", []),
         "original_language": (show.tmdb_data or {}).get("original_language"),
         "adult": (show.tmdb_data or {}).get("adult", False),
