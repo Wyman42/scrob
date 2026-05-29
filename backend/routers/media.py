@@ -36,6 +36,7 @@ class SessionReportRequest(BaseModel):
     state: str  # "playing" | "progress" | "paused" | "stopped"
     position_ms: int = 0
     duration_ms: int = 0
+    file_id: int | None = None
 
 
 # Simple TTL cache for the /for-you endpoint — keyed by user_id
@@ -3194,9 +3195,11 @@ async def get_playback_sources(
 
         elif cf.source.value == "plex" and cf.source_id:
             _plex_image_codecs = {"pgssub", "vobsub", "dvd_subtitle", "dvbsub"}
+            plex_item_valid = False
             try:
                 item = await plex_core.get_item(conn.url, conn.token, cf.source_id)
                 if item:
+                    plex_item_valid = True
                     media_list = item.get("Media", [])
                     if media_list and media_list[0].get("Part"):
                         for stream in media_list[0]["Part"][0].get("Stream", []):
@@ -3224,8 +3227,11 @@ async def get_playback_sources(
                                 })
             except Exception:
                 pass
+            if not plex_item_valid:
+                continue
 
         sources.append({
+            "file_id": cf.id,
             "connection_id": cf.connection_id,
             "source": cf.source.value,
             "name": conn.name or cf.source.value.title(),
@@ -3246,6 +3252,7 @@ async def get_subtitle(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     media_id: int | None = Query(None),
+    file_id: int | None = Query(None),
 ):
     """Proxy a subtitle track as WebVTT from a Jellyfin, Emby, or Plex server."""
     if type not in (MediaType.movie, MediaType.episode):
@@ -3261,15 +3268,18 @@ async def get_subtitle(
     if not media_ids:
         raise HTTPException(404, "Not in library")
 
+    sub_cf_filters = [
+        Collection.media_id.in_(media_ids),
+        Collection.user_id == current_user.id,
+        CollectionFile.connection_id == connection_id,
+    ]
+    if file_id is not None:
+        sub_cf_filters.append(CollectionFile.id == file_id)
     cf_q = await db.execute(
         select(CollectionFile, MediaServerConnection)
         .join(Collection, Collection.id == CollectionFile.collection_id)
         .outerjoin(MediaServerConnection, MediaServerConnection.id == CollectionFile.connection_id)
-        .where(
-            Collection.media_id.in_(media_ids),
-            Collection.user_id == current_user.id,
-            CollectionFile.connection_id == connection_id,
-        )
+        .where(*sub_cf_filters)
     )
     row = cf_q.first()
     if not row:
@@ -3331,6 +3341,7 @@ async def stream_media(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     media_id: int | None = Query(None),
+    file_id: int | None = Query(None),
 ):
     """Proxy a direct video stream from a Plex server (Jellyfin/Emby use the HLS endpoint)."""
     if type not in (MediaType.movie, MediaType.episode):
@@ -3346,15 +3357,18 @@ async def stream_media(
     if not media_ids:
         raise HTTPException(404, "Not in library")
 
+    cf_filters = [
+        Collection.media_id.in_(media_ids),
+        Collection.user_id == current_user.id,
+        CollectionFile.connection_id == connection_id,
+    ]
+    if file_id is not None:
+        cf_filters.append(CollectionFile.id == file_id)
     cf_q = await db.execute(
         select(CollectionFile, MediaServerConnection)
         .join(Collection, Collection.id == CollectionFile.collection_id)
         .outerjoin(MediaServerConnection, MediaServerConnection.id == CollectionFile.connection_id)
-        .where(
-            Collection.media_id.in_(media_ids),
-            Collection.user_id == current_user.id,
-            CollectionFile.connection_id == connection_id,
-        )
+        .where(*cf_filters)
     )
     row = cf_q.first()
     if not row:
@@ -3665,15 +3679,18 @@ async def report_session(
     if not media_ids:
         return {"ok": False}
 
+    session_cf_filters = [
+        Collection.media_id.in_(media_ids),
+        Collection.user_id == current_user.id,
+        CollectionFile.connection_id == body.connection_id,
+    ]
+    if body.file_id is not None:
+        session_cf_filters.append(CollectionFile.id == body.file_id)
     cf_q = await db.execute(
         select(CollectionFile, MediaServerConnection)
         .join(Collection, Collection.id == CollectionFile.collection_id)
         .outerjoin(MediaServerConnection, MediaServerConnection.id == CollectionFile.connection_id)
-        .where(
-            Collection.media_id.in_(media_ids),
-            Collection.user_id == current_user.id,
-            CollectionFile.connection_id == body.connection_id,
-        )
+        .where(*session_cf_filters)
     )
     row = cf_q.first()
     if not row:

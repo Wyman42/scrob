@@ -73,6 +73,7 @@ const { tmdbId, mediaType, inLibrary, title, token, secondary = false, mediaId }
     const closeBtn  = document.getElementById('player-close') as HTMLButtonElement | null;
 
     let currentConnectionId: string | null = null;
+    let currentFileId: string | null = null;
     let currentSubtitles: { index: number; language: string; label: string }[] = [];
     let sessionTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -80,12 +81,13 @@ const { tmdbId, mediaType, inLibrary, title, token, secondary = false, mediaId }
       if (sessionTimer) { clearInterval(sessionTimer); sessionTimer = null; }
     }
 
-    function attachSubtitles(connectionId: string, subtitles: typeof currentSubtitles): void {
+    function attachSubtitles(connectionId: string, fileId: string | null, subtitles: typeof currentSubtitles): void {
       Array.from(video.querySelectorAll('track')).forEach(t => t.remove());
+      const fileParam = fileId ? `&file_id=${fileId}` : '';
       subtitles.forEach(sub => {
         const track = document.createElement('track');
         track.kind = 'subtitles';
-        track.src = `/api/proxy/media/subtitles/${mediaType}/${tmdbId}?connection_id=${connectionId}&stream_index=${sub.index}${mediaIdParam}`;
+        track.src = `/api/proxy/media/subtitles/${mediaType}/${tmdbId}?connection_id=${connectionId}&stream_index=${sub.index}${mediaIdParam}${fileParam}`;
         track.srclang = sub.language || '';
         track.label = sub.label || sub.language || 'Subtitle';
         video.appendChild(track);
@@ -103,6 +105,7 @@ const { tmdbId, mediaType, inLibrary, title, token, secondary = false, mediaId }
           },
           body: JSON.stringify({
             connection_id: parseInt(currentConnectionId),
+            file_id: currentFileId ? parseInt(currentFileId) : null,
             state,
             position_ms: Math.round(video.currentTime * 1000),
             duration_ms: Math.round((video.duration || 0) * 1000),
@@ -113,14 +116,17 @@ const { tmdbId, mediaType, inLibrary, title, token, secondary = false, mediaId }
 
     function loadSource(
       connectionId: string,
+      fileId: string | null,
       subtitles: typeof currentSubtitles,
     ): void {
       stopSession();
       currentConnectionId = connectionId;
+      currentFileId = fileId;
       currentSubtitles = subtitles;
-      attachSubtitles(connectionId, subtitles);
+      attachSubtitles(connectionId, fileId, subtitles);
 
-      video.src = `/api/proxy/media/stream/${mediaType}/${tmdbId}?connection_id=${connectionId}${mediaIdParam}`;
+      const fileParam = fileId ? `&file_id=${fileId}` : '';
+      video.src = `/api/proxy/media/stream/${mediaType}/${tmdbId}?connection_id=${connectionId}${mediaIdParam}${fileParam}`;
       video.load();
       video.play().catch(() => {});
       reportSession('playing');
@@ -133,6 +139,7 @@ const { tmdbId, mediaType, inLibrary, title, token, secondary = false, mediaId }
     video.addEventListener('play',  () => { reportSession('playing'); });
 
     function renderSources(sources: {
+      file_id?: string;
       connection_id: string;
       source: string;
       name: string;
@@ -148,6 +155,7 @@ const { tmdbId, mediaType, inLibrary, title, token, secondary = false, mediaId }
         `<button
           class="source-btn flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${i === 0 ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500' : 'bg-zinc-900 border-zinc-700 text-zinc-300 hover:border-zinc-500'}"
           data-connection-id="${s.connection_id}"
+          data-file-id="${s.file_id ?? ''}"
           data-subtitles="${esc(JSON.stringify(s.subtitles || []))}"
         >
           ${LOCAL_SOURCES.includes(s.source) ? `<img src="/icons/${esc(s.source)}.svg" alt="${esc(s.source)}" class="w-4 h-4 rounded shrink-0" />` : ''}
@@ -163,7 +171,7 @@ const { tmdbId, mediaType, inLibrary, title, token, secondary = false, mediaId }
           });
           btn.classList.add('bg-blue-600', 'border-blue-500', 'text-white', 'hover:bg-blue-500');
           btn.classList.remove('bg-zinc-900', 'border-zinc-700', 'text-zinc-300', 'hover:border-zinc-500');
-          loadSource(btn.dataset.connectionId!, JSON.parse(btn.dataset.subtitles || '[]'));
+          loadSource(btn.dataset.connectionId!, btn.dataset.fileId || null, JSON.parse(btn.dataset.subtitles || '[]'));
         });
       });
     }
@@ -188,7 +196,7 @@ const { tmdbId, mediaType, inLibrary, title, token, secondary = false, mediaId }
         const sources = res.ok ? await res.json() : [];
         renderSources(sources);
         if (sources.length > 0) {
-          loadSource(sources[0].connection_id, sources[0].subtitles || []);
+          loadSource(sources[0].connection_id, sources[0].file_id ?? null, sources[0].subtitles || []);
         }
       } catch {
         sourcesEl.innerHTML = '<span class="text-xs text-red-400">Failed to load sources.</span>';
