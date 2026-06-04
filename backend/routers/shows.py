@@ -579,15 +579,25 @@ async def get_show_season(
                     local_media_by_tmdb[m.tmdb_id] = m
 
             local_media_ids = [m.id for m in local_media_by_tmdb.values()]
+            watched_dates: dict = {}
 
             if local_media_ids:
-                watched_q = await db.execute(
-                    select(WatchEvent.media_id).where(
+                watched_rows = await db.execute(
+                    select(
+                        WatchEvent.media_id,
+                        func.min(WatchEvent.watched_at).label("first_watched_at"),
+                        func.max(WatchEvent.watched_at).label("last_watched_at"),
+                    ).where(
                         WatchEvent.user_id == current_user.id,
                         WatchEvent.media_id.in_(local_media_ids),
-                    ).distinct()
+                    ).group_by(WatchEvent.media_id)
                 )
-                watched_ep_ids = {r[0] for r in watched_q.all()}
+                watched_data = watched_rows.all()
+                watched_ep_ids = {r[0] for r in watched_data}
+                watched_dates = {
+                    r[0]: {"first": r[1], "last": r[2]}
+                    for r in watched_data
+                }
 
                 ep_ratings_q = await db.execute(
                     select(Rating.media_id, Rating.rating).where(
@@ -683,6 +693,8 @@ async def get_show_season(
                         "watched": local_media_id in watched_ep_ids if local_media_id else False,
                         "user_rating": episode_ratings.get(local_media_id) if local_media_id else None,
                         "in_lists": episode_in_lists.get(ep.get("id"), []),
+                        "first_watched_at": watched_dates[local_media_id]["first"].isoformat() if local_media_id in watched_dates and watched_dates[local_media_id]["first"] else None,
+                        "last_watched_at": watched_dates[local_media_id]["last"].isoformat() if local_media_id in watched_dates and watched_dates[local_media_id]["last"] else None,
                     }
                 )
 

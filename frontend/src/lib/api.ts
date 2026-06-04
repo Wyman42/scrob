@@ -119,6 +119,8 @@ export interface EpisodeItem {
   watched: boolean;
   user_rating: number | null;
   in_lists: number[];
+  first_watched_at: string | null;
+  last_watched_at: string | null;
 }
 
 export interface ShowSummary {
