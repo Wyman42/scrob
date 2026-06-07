@@ -38,7 +38,6 @@ const show = season?.show;
 
   {season && (
     <div class="relative">
-      <!-- Backdrop -->
       {(season.backdrop_path || show?.backdrop_path) && (
         <div class="absolute -top-8 left-1/2 -translate-x-1/2 w-screen h-[500px] overflow-hidden">
           <div class="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/80 to-transparent z-10"></div>
@@ -129,61 +128,27 @@ const show = season?.show;
               {season.season_watched && (
                 (() => {
                   const withDates = season.episodes?.filter(ep => ep.watched && ep.first_watched_at).sort((a, b) => new Date(a.first_watched_at!).getTime() - new Date(b.first_watched_at!).getTime());
-                  const hasDateData = withDates && withDates.length > 0;
-                  const firstDate = hasDateData ? new Date(withDates[0].first_watched_at!) : null;
-                  const lastDate = hasDateData ? new Date(withDates[withDates.length - 1].last_watched_at!) : null;
-
-                  const formatDateFR = (d: Date) => {
-                    const day = String(d.getDate()).padStart(2, '0');
-                    const month = String(d.getMonth() + 1).padStart(2, '0');
-                    const year = d.getFullYear();
-                    return `${day}-${month}-${year}`;
-                  };
-
-                  if (hasDateData) {
+                  if (withDates && withDates.length > 0) {
+                    const firstDate = new Date(withDates[0].first_watched_at!);
+                    const lastDate = new Date(withDates[withDates.length - 1].last_watched_at!);
+                    const fmt = function(d) {
+                      var dd = String(d.getDate()).padStart(2, '0');
+                      var mm = String(d.getMonth() + 1).padStart(2, '0');
+                      return dd + "-" + mm + "-" + d.getFullYear();
+                    };
                     return (
-                      <span id="season-date-display" class="flex items-center gap-1.5 text-green-400 font-black">
+                      <span class="flex items-center gap-1.5 text-green-400 font-black">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4">
                           <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
                         </svg>
-                        Vue du : {formatDateFR(firstDate!)} au {formatDateFR(lastDate!)}
-                        <button id="edit-dates-btn" class="ml-1 p-0.5 rounded hover:bg-green-500/20 transition-colors cursor-pointer" title="Modifier les dates">
-                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3.5 h-3.5">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
-                          </svg>
-                        </button>
+                        Vue du : {fmt(firstDate)} au {fmt(lastDate)}
                       </span>
                     );
                   }
-
-                  return (
-                    <span id="season-date-display" class="flex items-center gap-1.5 text-green-400 font-black">
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-                      </svg>
-                      Vue du : <button id="edit-dates-btn" class="underline decoration-dotted hover:text-green-300 transition-colors cursor-pointer text-sm font-bold">Définir les dates</button>
-                    </span>
-                  );
+                  return null;
                 })()
               )}
             </div>
-
-            <div class="mb-6">
-              <div id="edit-dates-form" class="hidden mb-4 p-4 bg-zinc-800/50 border border-zinc-700 rounded-xl">
-                <h3 class="text-sm font-bold text-zinc-300 mb-3">Définir les dates de visionnage</h3>
-                <div class="flex items-center gap-3 flex-wrap">
-                  <div class="flex items-center gap-2">
-                    <label class="text-xs font-bold text-zinc-400 uppercase">Du</label>
-                    <input type="date" id="watched-start" class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-100 font-bold" />
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <label class="text-xs font-bold text-zinc-400 uppercase">Au</label>
-                    <input type="date" id="watched-end" class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-100 font-bold" />
-                  </div>
-                  <button id="save-dates-btn" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold rounded-lg transition-colors cursor-pointer">Enregistrer</button>
-                  <button id="cancel-dates-btn" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-sm font-bold rounded-lg transition-colors cursor-pointer">Annuler</button>
-                </div>
-              </div>
 
             <div class="mb-6">
               <ActionBar
@@ -243,7 +208,6 @@ const show = season?.show;
             {season.episodes?.map((ep) => (
               <div class="group relative bg-zinc-900/50 border border-zinc-800 rounded-3xl overflow-hidden hover:bg-zinc-800/60 hover:border-blue-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-blue-900/10">
                 <a href={`/show/tvdb/${id}/season/${season_number}/${ep.episode_number}`} class="flex flex-col md:flex-row gap-6 p-5 block active:opacity-70 transition-opacity duration-100">
-                  <!-- Episode Thumbnail -->
                   <div class="w-full md:w-64 shrink-0">
                     <div class="aspect-video rounded-2xl overflow-hidden bg-zinc-950 border border-zinc-800/50 relative shadow-lg group-hover:border-blue-500/30 transition-colors">
                       {ep.image_url ? (
@@ -256,7 +220,6 @@ const show = season?.show;
                     </div>
                   </div>
 
-                  <!-- Episode Info -->
                   <div class="flex-1 min-w-0">
                     <div class="flex items-start justify-between gap-4 mb-2">
                       <div class="min-w-0">
@@ -381,87 +344,6 @@ const show = season?.show;
         btn.removeAttribute('disabled');
         btn.classList.remove('opacity-60', 'cursor-not-allowed');
         setTimeout(() => { label.textContent = 'Refresh Metadata'; }, 3000);
-      }
-    });
-  }
-</script>
-
-<script define:vars={{ showId: tvdbId, seasonNumber: Number(season_number), token: Astro.locals.token }}>
-  const editBtn = document.getElementById('edit-dates-btn');
-  const editForm = document.getElementById('edit-dates-form');
-  const saveBtn = document.getElementById('save-dates-btn');
-  const cancelBtn = document.getElementById('cancel-dates-btn');
-  const startInput = document.getElementById('watched-start');
-  const endInput = document.getElementById('watched-end');
-  const dateDisplay = document.getElementById('season-date-display');
-
-  function extractCurrentDates() {
-    if (!dateDisplay || !dateDisplay.textContent) return;
-    const match = dateDisplay.textContent.match(/Vue du\s*:\s*(\d{2})-(\d{2})-(\d{4})\s*au\s*(\d{2})-(\d{2})-(\d{4})/);
-    if (match) {
-      startInput.value = `${match[3]}-${match[2]}-${match[1]}`;
-      endInput.value = `${match[6]}-${match[5]}-${match[4]}`;
-    }
-  }
-
-  if (editBtn && editForm) {
-    editBtn.addEventListener('click', () => {
-      extractCurrentDates();
-      editForm.classList.remove('hidden');
-      editForm.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    });
-  }
-
-  if (cancelBtn && editForm) {
-    cancelBtn.addEventListener('click', () => {
-      editForm.classList.add('hidden');
-    });
-  }
-
-  if (saveBtn && editForm) {
-    saveBtn.addEventListener('click', async () => {
-      const watchedStart = startInput?.value;
-      const watchedEnd = endInput?.value;
-
-      if (!watchedStart || !watchedEnd) {
-        alert('Veuillez sélectionner une date de début et une date de fin.');
-        return;
-      }
-
-      if (watchedStart > watchedEnd) {
-        alert('La date de début doit être antérieure à la date de fin.');
-        return;
-      }
-
-      saveBtn.disabled = true;
-      saveBtn.textContent = 'Enregistrement...';
-
-      try {
-        const res = await fetch('/api/proxy/history/season', {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            series_tmdb_id: showId,
-            season_number: seasonNumber,
-            watched_start: watchedStart,
-            watched_end: watchedEnd,
-          }),
-        });
-
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.detail || "Erreur lors de l'enregistrement");
-        }
-
-        editForm.classList.add('hidden');
-        window.location.reload();
-      } catch (err) {
-        alert(err.message);
-        saveBtn.disabled = false;
-        saveBtn.textContent = 'Enregistrer';
       }
     });
   }
