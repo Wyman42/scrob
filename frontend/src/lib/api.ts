@@ -1118,6 +1118,9 @@ export const api = {
     markSeasonWatched: (body: { series_tmdb_id: number; season_number: number }, token: string) =>
       post<{ status: string; count: number }>("/history/season", body, token),
 
+    updateSeasonDates: (body: { series_tmdb_id: number; season_number: number; watched_start: string; watched_end: string }, token: string) =>
+      patch<{ status: string; count: number }>("/history/season", body, token),
+
     unmarkSeasonWatched: (seriesTmdbId: number, seasonNumber: number, token: string) =>
       del<{ status: string }>(`/history/season?series_tmdb_id=${seriesTmdbId}&season_number=${seasonNumber}`, token),
 

@@ -810,6 +810,59 @@ async def mark_season_watched(
     return {"status": "ok", "count": len(newly_watched)}
 
 
+@router.patch("/season")
+async def update_season_watch_dates(
+    body: schemas.SeasonDatesUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update the watch dates for all watched episodes in a season."""
+    show_q = await db.execute(select(Show).where(Show.tmdb_id == body.series_tmdb_id))
+    show = show_q.scalar_one_or_none()
+    if not show:
+        raise HTTPException(status_code=404, detail="Show not found in local database")
+
+    # Find all completed watch events for this season
+    events_q = await db.execute(
+        select(WatchEvent)
+        .join(Media, Media.id == WatchEvent.media_id)
+        .where(
+            WatchEvent.user_id == current_user.id,
+            Media.show_id == show.id,
+            Media.media_type == MediaType.episode,
+            Media.season_number == body.season_number,
+            WatchEvent.completed == True,
+        )
+        .order_by(WatchEvent.watched_at)
+    )
+    events = events_q.scalars().all()
+
+    if not events:
+        raise HTTPException(status_code=404, detail="No watch events found for this season")
+
+    # Parse the dates
+    try:
+        start_dt = datetime.strptime(body.watched_start, "%Y-%m-%d")
+        end_dt = datetime.strptime(body.watched_end, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    if start_dt > end_dt:
+        raise HTTPException(status_code=400, detail="Start date must be before end date")
+
+    # Distribute dates evenly across events
+    if len(events) == 1:
+        events[0].watched_at = start_dt
+    else:
+        total_seconds = (end_dt - start_dt).total_seconds()
+        step = total_seconds / (len(events) - 1) if len(events) > 1 else 0
+        for i, event in enumerate(events):
+            event.watched_at = datetime.fromtimestamp(start_dt.timestamp() + step * i)
+
+    await db.commit()
+    return {"status": "ok", "count": len(events)}
+
+
 @router.delete("/season")
 async def unwatch_season(
     series_tmdb_id: int = Query(...),

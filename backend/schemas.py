@@ -204,6 +204,12 @@ class PasswordUpdate(BaseModel):
     current_password: Optional[str] = None
     new_password: str
 
+class SeasonDatesUpdate(BaseModel):
+    series_tmdb_id: int
+    season_number: int
+    watched_start: str  # date string YYYY-MM-DD
+    watched_end: str    # date string YYYY-MM-DD
+
 class WatchEventCreate(BaseModel):
     tmdb_id: int
     media_type: MediaType
