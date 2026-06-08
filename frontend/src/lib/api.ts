@@ -509,6 +509,7 @@ export interface MediaItem {
   backdrop_path?: string | null;
   release_date?: string | null;
   tmdb_rating?: number | null;
+  first_watched_at?: string | null;
   season_number?: number | null;
   episode_number?: number | null;
   runtime?: number | null;

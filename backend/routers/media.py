@@ -170,14 +170,18 @@ async def enrich_with_state(
 
     # --- Watched state ---
     watched_movies: set[int] = set()
+    movie_watched_dates: dict[int, str] = {}
     if movie_tmdb_ids:
         q = await db.execute(
-            select(Media.tmdb_id)
+            select(Media.tmdb_id, func.min(WatchEvent.watched_at).label("first_watched_at"))
             .join(WatchEvent, WatchEvent.media_id == Media.id)
             .where(WatchEvent.user_id == user_id, Media.tmdb_id.in_(movie_tmdb_ids), Media.media_type == MediaType.movie)
-            .distinct()
+            .group_by(Media.tmdb_id)
         )
-        watched_movies = {r[0] for r in q.all()}
+        for r in q.all():
+            watched_movies.add(r[0])
+            if r.first_watched_at:
+                movie_watched_dates[r[0]] = r.first_watched_at.isoformat()
 
     watched_shows: set[int] = set()
     show_watched_count_map: dict[int, int] = {}
@@ -482,6 +486,7 @@ async def enrich_with_state(
         t = item.get("type")
         if t == "movie":
             item["watched"] = tid in watched_movies
+            item["first_watched_at"] = movie_watched_dates.get(tid)
             in_lib = tid in collected_movie_ids
             item["in_library"] = in_lib
             item["collection_pct"] = 100 if in_lib else 0
