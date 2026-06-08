@@ -131,17 +131,20 @@ const show = season?.show;
                   if (withDates && withDates.length > 0) {
                     const firstDate = new Date(withDates[0].first_watched_at!);
                     const lastDate = new Date(withDates[withDates.length - 1].last_watched_at!);
+                    const opts = { day: 'numeric' as const, month: 'short' as const, year: 'numeric' as const };
                     const fmt = function(d) {
-                      var dd = String(d.getDate()).padStart(2, '0');
-                      var mm = String(d.getMonth() + 1).padStart(2, '0');
-                      return dd + "-" + mm + "-" + d.getFullYear();
+                      var parts = d.toLocaleDateString('en-GB', opts).split(' ');
+                      return parts[0] + ' ' + parts[1] + ' ' + parts[2];
                     };
+                    var firstStr = fmt(firstDate);
+                    var lastStr = fmt(lastDate);
+                    var sameDay = firstDate.getTime() === lastDate.getTime();
                     return (
                       <span class="flex items-center gap-1.5 text-green-400 font-black">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4">
                           <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
                         </svg>
-                        Vue du : {fmt(firstDate)} au {fmt(lastDate)}
+                        Viewed: {firstStr}{sameDay ? '' : (' \u2192 ' + lastStr)}
                       </span>
                     );
                   }
