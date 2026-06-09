@@ -777,15 +777,16 @@ async def mark_season_watched(
         return {"status": "ok", "count": 0}
 
     already_q = await db.execute(
-        select(WatchEvent.media_id).where(
+        select(WatchEvent).where(
             WatchEvent.user_id == current_user.id,
             WatchEvent.media_id.in_([ep.id for ep in all_season_episodes]),
             WatchEvent.completed == True
         )
     )
-    already_watched = {r[0] for r in already_q.all()}
+    existing_events = already_q.scalars().all()
+    already_watched = {e.media_id for e in existing_events}
     
-    newly_watched = []
+    all_affected = []
     for ep in all_season_episodes:
         if ep.id not in already_watched:
             db.add(WatchEvent(
@@ -796,18 +797,27 @@ async def mark_season_watched(
                 play_count=1,
                 progress_percent=1.0,
             ))
-            newly_watched.append(ep.id)
-            
-    if newly_watched:
+            all_affected.append(ep.id)
+        else:
+            # Rewatch: update watched_at and increment play_count
+            for event in existing_events:
+                if event.media_id == ep.id:
+                    event.watched_at = now
+                    event.play_count = (event.play_count or 1) + 1
+                    event.progress_percent = 1.0
+                    all_affected.append(ep.id)
+                    break
+
+    if all_affected:
         await db.execute(
             delete(PlaybackProgress).where(
                 PlaybackProgress.user_id == current_user.id,
-                PlaybackProgress.media_id.in_(newly_watched),
+                PlaybackProgress.media_id.in_(all_affected),
             )
         )
     await db.commit()
-    await _push_watch_state(db, current_user.id, newly_watched, watched=True)
-    return {"status": "ok", "count": len(newly_watched)}
+    await _push_watch_state(db, current_user.id, all_affected, watched=True)
+    return {"status": "ok", "count": len(all_affected)}
 
 
 @router.patch("/season")
@@ -1004,13 +1014,14 @@ async def mark_show_watched(
         if not season_eps_to_watch: continue
 
         already_q = await db.execute(
-            select(WatchEvent.media_id).where(
+            select(WatchEvent).where(
                 WatchEvent.user_id == current_user.id,
                 WatchEvent.media_id.in_([ep.id for ep in season_eps_to_watch]),
                 WatchEvent.completed == True
             )
         )
-        already_watched = {r[0] for r in already_q.all()}
+        existing_events = already_q.scalars().all()
+        already_watched = {e.media_id for e in existing_events}
         
         for ep in season_eps_to_watch:
             if ep.id not in already_watched:
@@ -1023,6 +1034,14 @@ async def mark_show_watched(
                     progress_percent=1.0,
                 ))
                 all_newly_watched_ids.append(ep.id)
+            else:
+                for event in existing_events:
+                    if event.media_id == ep.id:
+                        event.watched_at = now
+                        event.play_count = (event.play_count or 1) + 1
+                        event.progress_percent = 1.0
+                        all_newly_watched_ids.append(ep.id)
+                        break
 
     if all_newly_watched_ids:
         await db.execute(
