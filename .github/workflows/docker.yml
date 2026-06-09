@@ -42,5 +42,6 @@ jobs:
             APP_VERSION=${{ steps.branch.outputs.tag }}-dev
           tags: |
             ghcr.io/wyman42/scrob:${{ steps.branch.outputs.tag }}
+            ghcr.io/wyman42/scrob:${{ steps.branch.outputs.tag }}-${{ github.sha }}
           cache-from: type=gha,scope=scrob-${{ steps.branch.outputs.tag }}
           cache-to: type=gha,mode=max,scope=scrob-${{ steps.branch.outputs.tag }}
